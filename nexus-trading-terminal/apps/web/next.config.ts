@@ -23,7 +23,8 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Project guidance for coding agents lives in the repository root CLAUDE.md.
   agentRules: false,
-  output: "standalone",
+  // Self-contained server bundle for the Docker image; plain `next start` locally.
+  output: process.env.NEXT_STANDALONE === "1" ? "standalone" : undefined,
   transpilePackages: ["@nexus/shared-types"],
   experimental: {
     proxyClientMaxBodySize: "25mb",

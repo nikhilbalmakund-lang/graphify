@@ -116,7 +116,11 @@ class SecretsService:
                 changed.append(k)
         body = "# NEXUS server-side secrets (written by the Settings page). Never commit this file.\n"
         body += "".join(f"{k}={v}\n" for k, v in sorted(data.items()))
-        self.path.write_text(body, encoding="utf-8")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        # Create with owner-only permissions from the start (no world-readable window).
+        fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(body)
         os.chmod(self.path, stat.S_IRUSR | stat.S_IWUSR)
         return changed
 

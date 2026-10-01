@@ -9,20 +9,24 @@ Every value is optional so the application always starts in DEMO MODE.
 from __future__ import annotations
 
 import json
+import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DATA_DIR = PROJECT_ROOT / "data"
-SECRETS_FILE = PROJECT_ROOT / ".secrets.env"
+# Both files can be relocated (Docker volume, isolated test runs) without code changes.
+ENV_FILE = Path(os.environ.get("NEXUS_ENV_FILE") or PROJECT_ROOT / ".env")
+SECRETS_FILE = Path(os.environ.get("NEXUS_SECRETS_FILE") or PROJECT_ROOT / ".secrets.env")
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(str(PROJECT_ROOT / ".env"), str(SECRETS_FILE)),
+        env_file=(str(ENV_FILE), str(SECRETS_FILE)),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -30,10 +34,10 @@ class Settings(BaseSettings):
 
     app_name: str = "NEXUS Trading Intelligence"
     app_short_name: str = "NEXUS"
-    environment: str = "development"
     api_host: str = "127.0.0.1"
     api_port: int = 8000
-    cors_origins: list[str] = Field(
+    # NoDecode: accept "a,b" as well as a JSON list (see _split).
+    cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"]
     )
     log_level: str = "INFO"

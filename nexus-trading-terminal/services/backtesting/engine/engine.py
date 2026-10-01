@@ -236,7 +236,8 @@ class Backtester:
 
         def finish(t: int, raw_price: float, reason: str) -> None:
             nonlocal pos, cash
-            assert pos is not None
+            if pos is None:
+                return
             cash += self._close_part(pos, pos.lots, raw_price, t, reason)
             net = pos.realized - pos.entry_fee  # realized is net of exit fees; entry fee was debited at fill
             exits = pos.partials

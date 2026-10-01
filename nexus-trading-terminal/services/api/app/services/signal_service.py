@@ -14,7 +14,7 @@ import hashlib
 import json
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -33,6 +33,7 @@ from app.models import (
     SignalOutcome,
     StrategyRegimeStat,
 )
+from app.services.ai_budget import ai_budget_left
 from app.services.audit_service import AI_ERROR, SIGNAL_GENERATED, SIGNAL_REJECTED, AuditService
 from app.services.content_service import ContentService
 from app.services.market_service import MarketService
@@ -274,15 +275,7 @@ class SignalService:
             }
 
     async def _ai_budget_left(self) -> bool:
-        limit = self.settings.get("ai").max_calls_per_day
-        start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-        async with self.db.session() as s:
-            used = await s.scalar(
-                select(func.count())
-                .select_from(AICall)
-                .where(AICall.created_at >= start, AICall.cached.is_(False))
-            )
-        return (used or 0) < limit
+        return await ai_budget_left(self.db, self.settings)
 
     async def _ai_payload(
         self, ctx: Any, cand: SignalCandidate, evidence: Any, symbol: str

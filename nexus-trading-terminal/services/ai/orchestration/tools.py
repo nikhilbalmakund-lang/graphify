@@ -104,4 +104,5 @@ TOOLS: list[ToolSpec] = [
 
 TOOL_NAMES = {t.name for t in TOOLS}
 FORBIDDEN_TOOLS = {"place_order", "cancel_order", "close_position", "modify_order", "update_settings"}
-assert not (TOOL_NAMES & FORBIDDEN_TOOLS), "Execution tools must never be exposed to AI"
+if TOOL_NAMES & FORBIDDEN_TOOLS:  # explicit check: survives `python -O`
+    raise RuntimeError("Execution tools must never be exposed to AI")

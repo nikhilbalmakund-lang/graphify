@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from app.api.deps import get_container, symbol_of
 from app.core.container import Container
 from app.schemas.api import EventOut, NewsOut
+from app.services.ai_budget import budgeted_providers
 
 router = APIRouter(prefix="/api", tags=["content"])
 
@@ -42,7 +43,8 @@ async def news(
 
 @router.post("/news/refresh")
 async def refresh_news(c: Container = Depends(get_container)) -> dict[str, Any]:
-    n = await c.content.refresh_news(c.ai_providers(), c.settings.get("ai").ai_news_sentiment)
+    providers, _ = await budgeted_providers(c)
+    n = await c.content.refresh_news(providers, c.settings.get("ai").ai_news_sentiment)
     return {
         "new_items": n,
         "provider": c.content.news_provider.name,

@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { entryMarker, signalLevels, structureLevels, structureMarkers } from "@/components/charts/levels";
 import { type Drawing, type DrawTool, LINE_OVERLAYS, PANE_INDICATORS, PriceChart, type PriceChartHandle } from "@/components/charts/price-chart";
 import { KV } from "@/components/common/stat";
+import { useSettings } from "@/components/layout/use-system";
 import { ErrorState, LoadingRows } from "@/components/common/states";
 import { DataBadge, RegimeBadge, TrendBadge } from "@/components/market/badges";
 import { SymbolSelect, TimeframeTabs } from "@/components/market/pickers";
@@ -74,8 +75,10 @@ function ToolButton({ active, onClick, label, children }: { active?: boolean; on
 export function ChartView() {
   const router = useRouter();
   const params = useSearchParams();
-  const symParam = (params.get("symbol") ?? "XAUUSD").toUpperCase();
-  const symbol = DEFAULT_SYMBOLS.includes(symParam) ? symParam : "XAUUSD";
+  const { data: settingsData } = useSettings();
+  const fallbackSymbol = settingsData?.app.default_market ?? "XAUUSD";
+  const symParam = (params.get("symbol") ?? fallbackSymbol).toUpperCase();
+  const symbol = DEFAULT_SYMBOLS.includes(symParam) ? symParam : fallbackSymbol;
   const tfParam = params.get("tf") ?? "15m";
   const tf = (TIMEFRAMES as string[]).includes(tfParam) ? (tfParam as Timeframe) : "15m";
   const signalId = params.get("signal");

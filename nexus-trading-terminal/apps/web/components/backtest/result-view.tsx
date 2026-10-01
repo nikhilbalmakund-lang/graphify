@@ -211,7 +211,7 @@ export function BacktestResultView({ bt }: { bt: BacktestDetail }) {
                 <ul className="mt-1 list-disc pl-4">
                   {r.overfitting.flags.map((f) => (
                     <li key={f.code}>
-                      <span className={f.severity === "HIGH" ? "text-down" : "text-warn"}>{f.code}</span> · {f.detail}
+                      <span className={f.severity === "CRITICAL" ? "text-down" : "text-warn"}>{f.code}</span> · {f.detail}
                     </li>
                   ))}
                 </ul>

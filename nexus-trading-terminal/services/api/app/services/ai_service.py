@@ -16,6 +16,7 @@ from ai.providers.base import AIProviderError, ImageInput
 from app.core.database import utcnow
 from app.core.errors import NexusError
 from app.models import AICall, Briefing, SignalAIAnalysis
+from app.services.ai_budget import budgeted_providers
 from market_data.models import Timeframe
 from market_data.providers.base import MarketDataError
 from market_data.sessions import is_open
@@ -267,8 +268,9 @@ class AIService:
 
     async def chat(self, question: str, history: list[ChatTurn]) -> dict[str, Any]:
         c = self.c
+        providers, budget_notes = await budgeted_providers(c)
         agent = AIChatAgent(
-            c.ai_providers(),
+            providers,
             self.execute_tool,
             c.catalog.resolve,
             c.settings.get("markets").default_timeframe,
@@ -292,7 +294,9 @@ class AIService:
                         success=True,
                     )
                 )
-        return {**resp.model_dump(mode="json"), "is_demo_data": c.market.is_demo}
+        out = {**resp.model_dump(mode="json"), "is_demo_data": c.market.is_demo}
+        out["warnings"] = [*budget_notes, *out.get("warnings", [])]
+        return out
 
     # ----------------------------------------------------------- research
     async def research(self, symbol: str, tf: Timeframe) -> dict[str, Any]:
@@ -353,7 +357,9 @@ class AIService:
             "data_quality": rep.quality_score,
         }
         try:
-            res, errors = await AIResearcher(c.ai_providers()).research(payload)
+            providers, budget_notes = await budgeted_providers(c)
+            res, errors = await AIResearcher(providers).research(payload)
+            errors = [*budget_notes, *errors]
         except AIProviderError as exc:
             raise NexusError("AI_PROVIDER_UNAVAILABLE", exc.message) from exc
         await self._log(res)
@@ -425,9 +431,12 @@ class AIService:
         sym = c.catalog.resolve(symbol) if symbol else None
         if sym:
             market_snapshot = await self._snapshot(sym)
-        result, raw = await AIChartAnalyzer(c.ai_providers()).analyze(
+        providers, budget_notes = await budgeted_providers(c)
+        result, raw = await AIChartAnalyzer(providers).analyze(
             ImageInput(data=clean.getvalue(), mime_type="image/png"), context
         )
+        if budget_notes:
+            result.errors = [*budget_notes, *result.errors]
         if raw is not None:
             await self._log(raw)
             detected = (result.analysis or {}).get("asset_visible")
@@ -548,7 +557,9 @@ class AIService:
             "news": news,
         }
         try:
-            res, errors = await BriefingWriter(c.ai_providers()).write(payload)
+            providers, budget_notes = await budgeted_providers(c)
+            res, errors = await BriefingWriter(providers).write(payload)
+            errors = [*budget_notes, *errors]
         except AIProviderError as exc:
             raise NexusError("AI_PROVIDER_UNAVAILABLE", exc.message) from exc
         await self._log(res)
@@ -644,7 +655,9 @@ class AIService:
             signal.get("opposing"),
         )
         try:
-            res, errors = await AIExplainer(self.c.ai_providers()).explain(slim)
+            providers, budget_notes = await budgeted_providers(self.c)
+            res, errors = await AIExplainer(providers).explain(slim)
+            errors = [*budget_notes, *errors]
         except AIProviderError as exc:
             raise NexusError("AI_PROVIDER_UNAVAILABLE", exc.message) from exc
         await self._log(res)

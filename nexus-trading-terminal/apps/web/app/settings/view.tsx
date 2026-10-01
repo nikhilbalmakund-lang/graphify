@@ -300,7 +300,7 @@ function SecretRow({ s, onSave }: { s: SecretStatus; onSave: (key: string, value
         <p className="text-[0.68rem] text-faint">{SECRET_INFO[s.key]}</p>
       </div>
       <div className="flex items-center gap-2">
-        {s.configured ? <Badge tone="up">Configured ••••{s.hint ?? ""}</Badge> : <Badge>Not set</Badge>}
+        {s.configured ? <Badge tone="up">Configured {s.hint ?? ""}</Badge> : <Badge>Not set</Badge>}
         <div className="relative flex-1">
           <Input
             type={show ? "text" : "password"}
@@ -321,6 +321,7 @@ function SecretRow({ s, onSave }: { s: SecretStatus; onSave: (key: string, value
         <Button
           size="sm"
           variant="primary"
+          aria-label={`Save ${s.key}`}
           disabled={!value}
           onClick={async () => {
             await onSave(s.key, value);
@@ -331,7 +332,7 @@ function SecretRow({ s, onSave }: { s: SecretStatus; onSave: (key: string, value
           Save
         </Button>
         {s.configured ? (
-          <Button size="sm" variant="ghost" onClick={() => onSave(s.key, null)}>
+          <Button size="sm" variant="ghost" aria-label={`Clear ${s.key}`} onClick={() => onSave(s.key, null)}>
             Clear
           </Button>
         ) : null}

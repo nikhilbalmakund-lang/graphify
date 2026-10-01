@@ -948,7 +948,7 @@ export interface SettingsPayload {
   secrets: SecretStatus[];
   providers: Record<string, string>;
   live_trading: { env_enabled: boolean; ui_switch_on: boolean; broker: string; allowed: boolean; reasons: string[] };
-  app: { name: string; short_name: string };
+  app: { name: string; short_name: string; default_market: string };
 }
 
 export interface LiveMessage<T = unknown> {

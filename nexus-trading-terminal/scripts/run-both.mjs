@@ -1,5 +1,5 @@
 // Run the API and the web app side by side with prefixed output (used by dev/start).
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 import { IS_WIN, ROOT } from "./lib.mjs";
 
@@ -7,14 +7,27 @@ import { IS_WIN, ROOT } from "./lib.mjs";
 export function runAll(procs) {
   const children = [];
   let exiting = false;
+  // Kill each child's whole process tree (npm -> sh -> next, node -> python).
+  const killTree = (child) => {
+    if (child.exitCode !== null) return;
+    if (IS_WIN) {
+      spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    } else {
+      try {
+        process.kill(-child.pid, "SIGTERM");
+      } catch {
+        child.kill("SIGTERM");
+      }
+    }
+  };
   const stopAll = (code) => {
     if (exiting) return;
     exiting = true;
-    for (const c of children) if (!c.killed) c.kill("SIGTERM");
-    setTimeout(() => process.exit(code), 500);
+    for (const c of children) killTree(c);
+    setTimeout(() => process.exit(code), 800);
   };
   for (const p of procs) {
-    const child = spawn(p.cmd, p.args, { cwd: ROOT, env: { ...process.env, FORCE_COLOR: "1", ...p.env }, shell: IS_WIN, stdio: ["inherit", "pipe", "pipe"] });
+    const child = spawn(p.cmd, p.args, { cwd: ROOT, env: { ...process.env, FORCE_COLOR: "1", ...p.env }, shell: IS_WIN, detached: !IS_WIN, stdio: ["inherit", "pipe", "pipe"] });
     const prefix = `\x1b[${p.color}m[${p.name}]\x1b[0m `;
     const pipe = (stream, out) => {
       let buf = "";

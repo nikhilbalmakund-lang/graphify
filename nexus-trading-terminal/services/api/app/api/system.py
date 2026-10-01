@@ -180,7 +180,11 @@ async def get_settings_all(c: Container = Depends(get_container)) -> dict[str, A
         "secrets": [s.model_dump() for s in c.secrets.status(c.env)],
         "providers": c.secrets.providers(c.env),
         "live_trading": _live(c),
-        "app": {"name": c.env.app_name, "short_name": c.env.app_short_name},
+        "app": {
+            "name": c.env.app_name,
+            "short_name": c.env.app_short_name,
+            "default_market": c.catalog.resolve(c.env.default_market) or "XAUUSD",
+        },
     }
 
 

@@ -47,7 +47,7 @@ function Validation({ row }: { row: AIAnalysisRow }) {
       <ul className="text-[0.68rem] text-muted">
         {v.issues.map((i, n) => (
           <li key={n}>
-            <span className={i.severity === "ERROR" ? "text-down" : "text-warn"}>{i.code}</span> · {i.detail}
+            <span className={i.severity === "SEVERE" ? "text-down" : "text-warn"}>{i.code}</span> · {i.detail}
           </li>
         ))}
       </ul>

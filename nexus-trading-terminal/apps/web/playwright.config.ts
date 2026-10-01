@@ -24,18 +24,12 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "node scripts/py.mjs -m app.cli serve",
+      // Fresh isolated database, no developer .env or keys: always DEMO mode.
+      command: "node scripts/e2e-api.mjs",
       cwd: root,
       url: "http://127.0.0.1:8000/health",
       timeout: 180_000,
       reuseExistingServer: false,
-      env: {
-        DATABASE_URL: "sqlite:///" + path.join(root, "data", "e2e.db"),
-        LOG_JSON: "false",
-        CORS_ORIGINS: "http://127.0.0.1:3100,http://localhost:3100",
-        BUILD_MEMORY_ON_STARTUP: "false",
-        SIGNAL_SCAN_INTERVAL_SECONDS: "3600",
-      },
     },
     {
       command: "npx next start --port 3100 --hostname 127.0.0.1",

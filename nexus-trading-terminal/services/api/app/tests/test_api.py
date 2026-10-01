@@ -132,7 +132,9 @@ def test_scanner_does_not_stack_signals_on_open_setups(client, monkeypatch):
         return None  # pretend a new bar closed since the open signal was issued
 
     monkeypatch.setattr(container.signals, "_existing", no_signal_for_this_bar)
-    created = client.portal.call(container.signals.scan_new_bars, [sig["symbol"]], Timeframe(sig["timeframe"]))
+    created = client.portal.call(
+        container.signals.scan_new_bars, [sig["symbol"]], Timeframe(sig["timeframe"])
+    )
     assert created == 0
     before = client.get("/api/signals", params={"symbol": sig["symbol"], "limit": 1000}).json()
     via_scanner = client.portal.call(
@@ -433,3 +435,29 @@ def test_openapi_documents_core_routes(client):
         "/health",
     ):
         assert path in spec["paths"], path
+
+
+def test_cors_origins_accept_comma_separated_and_json(monkeypatch):
+    from app.core.config import Settings
+
+    monkeypatch.setenv("CORS_ORIGINS", "http://a.test:3000, http://b.test:3000")
+    assert Settings(_env_file=None).cors_origins == ["http://a.test:3000", "http://b.test:3000"]
+    monkeypatch.setenv("CORS_ORIGINS", '["http://c.test"]')
+    assert Settings(_env_file=None).cors_origins == ["http://c.test"]
+
+
+def test_daily_ai_cap_pauses_every_ai_entry_point(client, monkeypatch):
+    from app.services.ai_budget import budgeted_providers
+
+    container = client.container
+
+    class FakeProvider:
+        name = "claude"
+
+    monkeypatch.setattr(container, "ai_providers", lambda: [FakeProvider()])
+    assert client.put("/api/settings/ai", json={"max_calls_per_day": 0}).status_code == 200
+    providers, notes = client.portal.call(budgeted_providers, container)
+    assert providers == [] and "cap reached" in notes[0]
+    assert client.put("/api/settings/ai", json={"max_calls_per_day": 200}).status_code == 200
+    providers, notes = client.portal.call(budgeted_providers, container)
+    assert len(providers) == 1 and notes == []

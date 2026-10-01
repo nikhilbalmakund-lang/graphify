@@ -12,6 +12,7 @@ from sqlalchemy import delete
 
 from app.core.database import utcnow
 from app.models import Signal, SystemEvent
+from app.services.ai_budget import budgeted_providers
 from market_data.models import Timeframe
 
 logger = logging.getLogger("nexus.background")
@@ -95,7 +96,8 @@ def start_background(c: Any) -> TaskManager:
 
     async def content() -> None:
         await c.content.refresh_calendar()
-        await c.content.refresh_news(c.ai_providers(), c.settings.get("ai").ai_news_sentiment)
+        providers, _ = await budgeted_providers(c)
+        await c.content.refresh_news(providers, c.settings.get("ai").ai_news_sentiment)
 
     async def health() -> None:
         before = c.market.health.status
