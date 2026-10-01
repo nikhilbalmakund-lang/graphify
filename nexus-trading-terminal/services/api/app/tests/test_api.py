@@ -120,6 +120,30 @@ def test_signals_can_become_active_and_go_to_paper(client):
     assert csv.status_code == 200 and csv.text.startswith("id,created_at,symbol")
 
 
+def test_scanner_does_not_stack_signals_on_open_setups(client, monkeypatch):
+    from market_data.models import Timeframe
+
+    container = client.container
+    active = client.get("/api/signals", params={"active": True}).json()
+    assert active, "previous test leaves an ACTIVE signal"
+    sig = active[0]
+
+    async def no_signal_for_this_bar(*_args, **_kwargs):
+        return None  # pretend a new bar closed since the open signal was issued
+
+    monkeypatch.setattr(container.signals, "_existing", no_signal_for_this_bar)
+    created = client.portal.call(container.signals.scan_new_bars, [sig["symbol"]], Timeframe(sig["timeframe"]))
+    assert created == 0
+    before = client.get("/api/signals", params={"symbol": sig["symbol"], "limit": 1000}).json()
+    via_scanner = client.portal.call(
+        lambda: container.signals.generate(sig["symbol"], Timeframe(sig["timeframe"]), source="scanner")
+    )
+    open_ids = {s["id"] for s in before if s["status"] in ("ACTIVE", "TRIGGERED", "TP1_HIT", "TP2_HIT")}
+    assert via_scanner["id"] in open_ids
+    after = client.get("/api/signals", params={"symbol": sig["symbol"], "limit": 1000}).json()
+    assert len(after) == len(before)
+
+
 def test_scanner_filters_and_labels(client):
     r = client.get("/api/scanner", params={"timeframe": "15m", "sort": "score"}).json()
     assert r["is_demo"] and "not predictions" in r["note"]

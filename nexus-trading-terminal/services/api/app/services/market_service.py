@@ -165,6 +165,8 @@ class MarketService:
                     "adx",
                     "cci20",
                     "obv",
+                    "atr14",
+                    "volume_sma20",
                 )
             },
             "structure": st.model_dump(mode="json"),

@@ -1,0 +1,37 @@
+{
+  "name": "nexus-trading-terminal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NEXUS Trading Intelligence - single-user AI trading research terminal (Next.js + FastAPI)",
+  "workspaces": [
+    "apps/web",
+    "packages/shared-types"
+  ],
+  "engines": {
+    "node": ">=20.9",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "node scripts/dev.mjs",
+    "dev:api": "node scripts/py.mjs -m app.cli serve --reload",
+    "dev:web": "npm run dev -w @nexus/web",
+    "demo": "npm run seed && npm run dev",
+    "seed": "node scripts/py.mjs -m app.cli seed",
+    "db:migrate": "node scripts/py.mjs -m app.cli migrate",
+    "test": "npm run test:api && npm run test:web",
+    "test:api": "node scripts/py.mjs -m pytest -q",
+    "test:web": "npm run test -w @nexus/web",
+    "test:e2e": "npm run test:e2e -w @nexus/web",
+    "lint": "npm run lint:api && npm run lint:web",
+    "lint:api": "node scripts/py.mjs -m ruff check . && node scripts/py.mjs -m ruff format --check .",
+    "lint:web": "npm run lint -w @nexus/web",
+    "typecheck": "npm run typecheck:api && npm run typecheck:web",
+    "typecheck:api": "node scripts/py.mjs -m mypy market_data quant risk ai backtesting paper_trading api/app",
+    "typecheck:web": "npm run typecheck -w @nexus/web",
+    "build": "npm run build -w @nexus/web",
+    "start": "node scripts/start.mjs",
+    "gen:types": "node scripts/py.mjs -m app.cli openapi ../packages/shared-types/openapi.json && npm run gen -w @nexus/shared-types",
+    "security": "node scripts/py.mjs -m bandit -q -r market_data quant risk ai backtesting paper_trading api/app -c pyproject.toml && node scripts/py.mjs -m pip_audit -r api/requirements.txt --progress-spinner off; npm audit --omit=dev --audit-level=high"
+  }
+}

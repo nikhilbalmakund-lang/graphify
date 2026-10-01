@@ -114,6 +114,11 @@ class SignalService:
             existing = await self._existing(spec.symbol, timeframe.value, bar_time)
             if existing is not None and (use_ai is not True or existing.ai_summary):
                 return await self.detail(existing.id)
+            if source == "scanner":
+                # Automated scans never stack a new setup on top of one that is still open.
+                open_sig = await self._open_signal(spec.symbol, timeframe.value)
+                if open_sig is not None:
+                    return await self.detail(open_sig.id)
 
         engine = self.engine()
         cfg = engine.config
@@ -237,6 +242,16 @@ class SignalService:
             return await s.scalar(
                 select(Signal)
                 .where(Signal.symbol == symbol, Signal.timeframe == timeframe, Signal.bar_time == bar_time)
+                .order_by(Signal.created_at.desc())
+                .limit(1)
+            )
+
+    async def _open_signal(self, symbol: str, timeframe: str) -> Signal | None:
+        """Latest still-open (not yet resolved) signal for this instrument and timeframe."""
+        async with self.db.session() as s:
+            return await s.scalar(
+                select(Signal)
+                .where(Signal.symbol == symbol, Signal.timeframe == timeframe, Signal.status.in_(TRACKABLE))
                 .order_by(Signal.created_at.desc())
                 .limit(1)
             )
@@ -1052,6 +1067,11 @@ class SignalService:
                 bundle, _, _ = await self.market.bundle(sym, timeframe)
                 bar_time = bundle.df.index[-1].to_pydatetime()
                 if await self._existing(sym, timeframe.value, bar_time) is not None:
+                    continue
+                # One open setup per instrument and timeframe: while a signal is still live
+                # (ACTIVE / TRIGGERED / partially closed) the scanner does not stack another
+                # overlapping one, which would double-count the same move in signal statistics.
+                if await self._open_signal(sym, timeframe.value) is not None:
                     continue
                 await self.generate(sym, timeframe, source="scanner")
                 created += 1
