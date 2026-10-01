@@ -1,0 +1,18 @@
+# Runtime dependencies for the NEXUS API and its in-process domain services
+# (quant, ai, backtesting, paper_trading, market_data, risk).
+fastapi~=0.142.2
+uvicorn[standard]~=0.54.0
+pydantic~=2.13.5
+pydantic-settings~=2.15.0
+sqlalchemy~=2.1.1
+alembic~=1.20.0
+numpy~=2.4.6
+pandas~=3.0.6
+scipy~=1.17.1
+scikit-learn~=1.9.1
+httpx~=0.28.1
+anthropic~=1.11.0
+google-genai~=2.26.0
+redis~=8.1.0
+python-multipart~=0.0.32
+pillow>=11.0,<13
