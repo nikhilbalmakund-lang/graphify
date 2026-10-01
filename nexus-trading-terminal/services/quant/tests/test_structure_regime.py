@@ -1,3 +1,5 @@
+from itertools import pairwise
+
 import numpy as np
 import pandas as pd
 
@@ -5,7 +7,13 @@ from market_data.models import Timeframe
 from quant.features.feature_set import compute_indicator_frame
 from quant.mtf.alignment import TimeframeView, closed_htf_bars, combine, resample_ohlcv
 from quant.regime.detector import Regime, classify_frame, detect_regime
-from quant.structure.engine import EV_BOS_UP, EV_CHOCH_DOWN, analyze_structure, compute_structure_states, find_pivots
+from quant.structure.engine import (
+    EV_BOS_UP,
+    EV_CHOCH_DOWN,
+    analyze_structure,
+    compute_structure_states,
+    find_pivots,
+)
 
 
 def frame_from_path(path, freq="1h"):
@@ -19,7 +27,7 @@ def frame_from_path(path, freq="1h"):
 
 def zigzag(points, steps=6):
     out = []
-    for a, b in zip(points[:-1], points[1:], strict=True):
+    for a, b in pairwise(points):
         out.extend(np.linspace(a, b, steps, endpoint=False))
     out.append(points[-1])
     return out
@@ -95,7 +103,7 @@ def test_mtf_alignment_and_adjustment_rules():
     ]
     mtf = combine(views)
     assert -1 <= mtf.alignment <= 1
-    adj_long, contradiction, pros, cons = mtf.adjustment_for(1, Timeframe.M15)
+    adj_long, contradiction, _, cons = mtf.adjustment_for(1, Timeframe.M15)
     assert contradiction and adj_long < 0 and "4H trend bearish" in cons
     adj_short, contra_short, _, _ = mtf.adjustment_for(-1, Timeframe.M15)
     assert not contra_short and adj_short > adj_long

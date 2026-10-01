@@ -26,11 +26,23 @@ def make_ctx(symbol="XAUUSD", tf=Timeframe.M15, **overrides):
     s = p.candles_sync(symbol, tf, 500)
     clean, rep = validate_series(s, spec, NOW)
     b = analyze_series(clean.df, tf)
-    bundles = {tf: b, Timeframe.H1: analyze_series(p.candles_sync(symbol, Timeframe.H1, 300).df, Timeframe.H1),
-               Timeframe.H4: analyze_series(p.candles_sync(symbol, Timeframe.H4, 300).df, Timeframe.H4)}
+    bundles = {
+        tf: b,
+        Timeframe.H1: analyze_series(p.candles_sync(symbol, Timeframe.H1, 300).df, Timeframe.H1),
+        Timeframe.H4: analyze_series(p.candles_sync(symbol, Timeframe.H4, 300).df, Timeframe.H4),
+    }
     q = p.quote_sync(symbol)
-    kwargs = dict(symbol=symbol, spec=spec, bundle=b, t=-1, mtf=mtf_from_bundles(bundles), data_quality=rep,
-                  bid=q.bid, ask=q.ask, market_open=q.market_open)
+    kwargs = dict(
+        symbol=symbol,
+        spec=spec,
+        bundle=b,
+        t=-1,
+        mtf=mtf_from_bundles(bundles),
+        data_quality=rep,
+        bid=q.bid,
+        ask=q.ask,
+        market_open=q.market_open,
+    )
     kwargs.update(overrides)
     return build_context(**kwargs)
 
@@ -40,7 +52,16 @@ def test_scores_are_bounded_and_components_stored(symbol):
     cand = SignalEngine().evaluate(make_ctx(symbol))
     assert 0 <= cand.score <= 100 and 0 <= cand.score_long <= 100 and 0 <= cand.score_short <= 100
     names = {c.name for c in cand.components}
-    assert names == {"trend", "structure", "momentum", "volume_vwap", "liquidity", "volatility", "macro", "sentiment"}
+    assert names == {
+        "trend",
+        "structure",
+        "momentum",
+        "volume_vwap",
+        "liquidity",
+        "volatility",
+        "macro",
+        "sentiment",
+    }
     assert sum(c.weight for c in cand.components) == pytest.approx(100.0)
     assert all(0 <= c.points <= c.weight + 1e-9 for c in cand.components)
     if cand.direction == Direction.NO_TRADE:
@@ -72,20 +93,36 @@ def test_levels_are_structural_and_consistent(symbol):
 
 def test_no_structural_levels_means_no_stop():
     ctx = make_ctx()
-    ctx = ctx.model_copy(update={"structure": ctx.structure.model_copy(update={
-        "last_swing_low": None, "last_swing_high": None, "supports": [], "resistances": []})})
+    ctx = ctx.model_copy(
+        update={
+            "structure": ctx.structure.model_copy(
+                update={"last_swing_low": None, "last_swing_high": None, "supports": [], "resistances": []}
+            )
+        }
+    )
     plan, reason = build_levels(ctx, 1, SignalConfig())
     assert plan is None and "invalidation" in reason.lower()
 
 
 def test_score_is_not_enough_filters_block():
-    cfg = SignalConfig(min_score=0, min_score_margin=0, min_rr=0, max_stop_atr=100, max_spread_atr=10,
-                       max_vol_percentile=100, block_on_mtf_contradiction=False)
+    cfg = SignalConfig(
+        min_score=0,
+        min_score_margin=0,
+        min_rr=0,
+        max_stop_atr=100,
+        max_spread_atr=10,
+        max_vol_percentile=100,
+        block_on_mtf_contradiction=False,
+    )
     ctx = make_ctx()
     base = SignalEngine(cfg).evaluate(ctx)
     closed = SignalEngine(cfg).evaluate(ctx.model_copy(update={"market_open": False}))
-    assert closed.direction == Direction.NO_TRADE and any("Market hours" in r for r in closed.no_trade_reasons)
-    event = EventRisk(available=True, is_demo=True, next_high_impact_minutes=20, next_high_impact_event="US CPI")
+    assert closed.direction == Direction.NO_TRADE and any(
+        "Market hours" in r for r in closed.no_trade_reasons
+    )
+    event = EventRisk(
+        available=True, is_demo=True, next_high_impact_minutes=20, next_high_impact_event="US CPI"
+    )
     news = SignalEngine(cfg).evaluate(ctx.model_copy(update={"events": event}))
     assert news.direction == Direction.NO_TRADE and any("News risk" in r for r in news.no_trade_reasons)
     if base.levels is not None:
@@ -103,8 +140,16 @@ def test_bad_data_forces_no_trade():
 
 
 def test_finalize_requires_historical_evidence():
-    cfg = SignalConfig(min_score=0, min_score_margin=0, min_rr=0, max_stop_atr=100, max_spread_atr=10,
-                       max_vol_percentile=100, block_on_mtf_contradiction=False, min_historical_samples=10)
+    cfg = SignalConfig(
+        min_score=0,
+        min_score_margin=0,
+        min_rr=0,
+        max_stop_atr=100,
+        max_spread_atr=10,
+        max_vol_percentile=100,
+        block_on_mtf_contradiction=False,
+        min_historical_samples=10,
+    )
     eng = SignalEngine(cfg)
     cand = eng.evaluate(make_ctx())
     small = HistoricalEvidence(sample_size=4, sample_label="INSUFFICIENT")
@@ -118,7 +163,9 @@ def test_finalize_requires_historical_evidence():
 
 
 def test_scoring_weights_configurable_and_validated():
-    w = ScoringWeights(trend=40, structure=40, momentum=20, volume_vwap=0, liquidity=0, volatility=0, macro=0, sentiment=0)
+    w = ScoringWeights(
+        trend=40, structure=40, momentum=20, volume_vwap=0, liquidity=0, volatility=0, macro=0, sentiment=0
+    )
     assert w.normalised()["trend"] == pytest.approx(40)
     cand = SignalEngine(SignalConfig(weights=w)).evaluate(make_ctx())
     assert {c.name: c.weight for c in cand.components}["macro"] == 0

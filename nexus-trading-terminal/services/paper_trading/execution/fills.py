@@ -30,7 +30,9 @@ class FillModel(BaseModel):
         slip = self.slippage(px)
         return px + side.sign * slip, slip
 
-    def pending_trigger(self, order_type: OrderType, side: OrderSide, level: float, quote: Quote) -> tuple[float, float] | None:
+    def pending_trigger(
+        self, order_type: OrderType, side: OrderSide, level: float, quote: Quote
+    ) -> tuple[float, float] | None:
         px = self.executable(side, quote)
         if order_type == OrderType.LIMIT:
             if (side == OrderSide.BUY and px <= level) or (side == OrderSide.SELL and px >= level):

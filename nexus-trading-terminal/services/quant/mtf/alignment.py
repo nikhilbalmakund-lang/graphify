@@ -102,9 +102,15 @@ class MTFAnalysis(BaseModel):
         return adj, contradiction, pros, cons
 
 
-def build_view(timeframe: Timeframe, frame: pd.DataFrame | None, structure_trend: str = "NEUTRAL",
-               regime: str | None = None, supports: list[float] | None = None,
-               resistances: list[float] | None = None, note: str = "") -> TimeframeView:
+def build_view(
+    timeframe: Timeframe,
+    frame: pd.DataFrame | None,
+    structure_trend: str = "NEUTRAL",
+    regime: str | None = None,
+    supports: list[float] | None = None,
+    resistances: list[float] | None = None,
+    note: str = "",
+) -> TimeframeView:
     if frame is None or len(frame) == 0:
         return TimeframeView(timeframe=timeframe.value, available=False, note=note or "No data")
     row = frame.iloc[-1]
@@ -118,16 +124,28 @@ def build_view(timeframe: Timeframe, frame: pd.DataFrame | None, structure_trend
 
     ts = g("trend_score")
     if ts is None:
-        return TimeframeView(timeframe=timeframe.value, available=False, note=note or "Insufficient bars for indicators")
+        return TimeframeView(
+            timeframe=timeframe.value, available=False, note=note or "Insufficient bars for indicators"
+        )
     dv = direction_value(ts, structure_trend)
     vwap = g("vwap")
     close = g("close")
     vrel = "UNAVAILABLE" if vwap is None or close is None else ("ABOVE" if close >= vwap else "BELOW")
     return TimeframeView(
-        timeframe=timeframe.value, close=close, trend=label_for(dv), direction_value=round(dv, 4), trend_score=ts,
-        momentum_score=g("momentum_score"), structure_trend=structure_trend, regime=regime, atr_pct=g("atr_pct"),
-        vol_percentile=g("vol_percentile"), rsi14=g("rsi14"), vwap_relation=vrel,
-        nearest_support=supports[0] if supports else None, nearest_resistance=resistances[0] if resistances else None,
+        timeframe=timeframe.value,
+        close=close,
+        trend=label_for(dv),
+        direction_value=round(dv, 4),
+        trend_score=ts,
+        momentum_score=g("momentum_score"),
+        structure_trend=structure_trend,
+        regime=regime,
+        atr_pct=g("atr_pct"),
+        vol_percentile=g("vol_percentile"),
+        rsi14=g("rsi14"),
+        vwap_relation=vrel,
+        nearest_support=supports[0] if supports else None,
+        nearest_resistance=resistances[0] if resistances else None,
         note=note,
     )
 
@@ -142,9 +160,18 @@ def combine(views: list[TimeframeView]) -> MTFAnalysis:
     bull = sum(w[v.timeframe] for v in avail if v.trend == "BULLISH") / total
     bear = sum(w[v.timeframe] for v in avail if v.trend == "BEARISH") / total
     dominant = label_for(alignment)
-    parts = [f"{v.timeframe}: {v.trend.lower()}" for v in sorted(avail, key=lambda v: -Timeframe(v.timeframe).seconds)]
-    return MTFAnalysis(views=views, alignment=round(alignment, 4), bullish_weight=round(bull, 4),
-                       bearish_weight=round(bear, 4), dominant=dominant, summary=", ".join(parts))
+    parts = [
+        f"{v.timeframe}: {v.trend.lower()}"
+        for v in sorted(avail, key=lambda v: -Timeframe(v.timeframe).seconds)
+    ]
+    return MTFAnalysis(
+        views=views,
+        alignment=round(alignment, 4),
+        bullish_weight=round(bull, 4),
+        bearish_weight=round(bear, 4),
+        dominant=dominant,
+        summary=", ".join(parts),
+    )
 
 
 def resample_ohlcv(df: pd.DataFrame, timeframe: Timeframe) -> pd.DataFrame:
@@ -157,7 +184,8 @@ def resample_ohlcv(df: pd.DataFrame, timeframe: Timeframe) -> pd.DataFrame:
     else:
         rule_kwargs = {"rule": timeframe.pandas_rule, "origin": "epoch"}
     out = df.resample(label="left", closed="left", **rule_kwargs).agg(
-        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+    )
     return out.dropna(subset=["open"])
 
 

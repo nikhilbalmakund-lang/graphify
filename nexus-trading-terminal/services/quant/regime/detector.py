@@ -104,7 +104,9 @@ def classify_frame(f: pd.DataFrame, th: RegimeThresholds | None = None) -> pd.Da
             clarity[i] = float(np.clip(0.4 + (th.mean_rev_autocorr - ac[i]) * 3, 0.2, 1.0))
         elif ranging[i]:
             regime[i] = Regime.RANGING.value
-            clarity[i] = float(np.clip(0.4 + (th.range_adx - adx[i]) / 20.0 + (th.range_er - er[i]), 0.2, 1.0))
+            clarity[i] = float(
+                np.clip(0.4 + (th.range_adx - adx[i]) / 20.0 + (th.range_er - er[i]), 0.2, 1.0)
+            )
         elif low_vol[i]:
             regime[i] = Regime.LOW_VOLATILITY.value
             clarity[i] = float(np.clip(0.4 + (th.low_vol_pct - volp[i]) / 20.0, 0.2, 1.0))
@@ -120,16 +122,21 @@ def classify_frame(f: pd.DataFrame, th: RegimeThresholds | None = None) -> pd.Da
     return out
 
 
-def detect_regime(f: pd.DataFrame, i: int = -1, th: RegimeThresholds | None = None,
-                  classified: pd.DataFrame | None = None) -> RegimeResult:
+def detect_regime(
+    f: pd.DataFrame, i: int = -1, th: RegimeThresholds | None = None, classified: pd.DataFrame | None = None
+) -> RegimeResult:
     pos = len(f) + i if i < 0 else i
     # Classification is row-wise (features already carry their own lookback).
     row = classified.iloc[pos] if classified is not None else classify_frame(f.iloc[[pos]], th).iloc[0]
     frow = f.iloc[pos]
     flags: list[Regime] = []
-    for col, reg in (("flag_high_vol", Regime.HIGH_VOLATILITY), ("flag_low_vol", Regime.LOW_VOLATILITY),
-                     ("flag_ranging", Regime.RANGING), ("flag_mean_reversion", Regime.MEAN_REVERSION),
-                     ("flag_breakout", Regime.BREAKOUT)):
+    for col, reg in (
+        ("flag_high_vol", Regime.HIGH_VOLATILITY),
+        ("flag_low_vol", Regime.LOW_VOLATILITY),
+        ("flag_ranging", Regime.RANGING),
+        ("flag_mean_reversion", Regime.MEAN_REVERSION),
+        ("flag_breakout", Regime.BREAKOUT),
+    ):
         if bool(row[col]) and reg.value != row["regime"]:
             flags.append(reg)
     if bool(row["flag_trending"]) and not str(row["regime"]).startswith("TRENDING"):
@@ -139,10 +146,26 @@ def detect_regime(f: pd.DataFrame, i: int = -1, th: RegimeThresholds | None = No
         v = frow.get(col)
         return None if v is None or (isinstance(v, float) and np.isnan(v)) else round(float(v), 4)
 
-    evidence = {k: g(k) for k in ("adx", "trend_score", "er20", "vol_percentile", "bb_width_percentile", "autocorr50", "atr_pct")}
+    evidence = {
+        k: g(k)
+        for k in (
+            "adx",
+            "trend_score",
+            "er20",
+            "vol_percentile",
+            "bb_width_percentile",
+            "autocorr50",
+            "atr_pct",
+        )
+    }
     regime = Regime(row["regime"])
-    return RegimeResult(regime=regime, clarity=round(float(row["clarity"]), 3), flags=flags, evidence=evidence,
-                        explanation=_explain(regime, evidence))
+    return RegimeResult(
+        regime=regime,
+        clarity=round(float(row["clarity"]), 3),
+        flags=flags,
+        evidence=evidence,
+        explanation=_explain(regime, evidence),
+    )
 
 
 def _explain(regime: Regime, e: dict[str, float | None]) -> str:

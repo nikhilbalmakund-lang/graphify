@@ -42,8 +42,12 @@ HEURISTIC_NOTE = (
 
 TREND_CODE = {1: "BULLISH", -1: "BEARISH", 0: "NEUTRAL"}
 EV_NONE, EV_BOS_UP, EV_BOS_DOWN, EV_CHOCH_UP, EV_CHOCH_DOWN = 0, 1, 2, 3, 4
-EVENT_NAMES = {EV_BOS_UP: ("BOS", "BULLISH"), EV_BOS_DOWN: ("BOS", "BEARISH"),
-               EV_CHOCH_UP: ("CHOCH", "BULLISH"), EV_CHOCH_DOWN: ("CHOCH", "BEARISH")}
+EVENT_NAMES = {
+    EV_BOS_UP: ("BOS", "BULLISH"),
+    EV_BOS_DOWN: ("BOS", "BEARISH"),
+    EV_CHOCH_UP: ("CHOCH", "BULLISH"),
+    EV_CHOCH_DOWN: ("CHOCH", "BEARISH"),
+}
 
 
 @dataclass
@@ -84,8 +88,8 @@ def find_pivots(high: np.ndarray, low: np.ndarray, left: int = 3, right: int = 3
     lw = sliding_window_view(low, w)
     centre_h = hw[:, left]
     centre_l = lw[:, left]
-    is_high = (centre_h > hw[:, :left].max(axis=1)) & (centre_h >= hw[:, left + 1:].max(axis=1))
-    is_low = (centre_l < lw[:, :left].min(axis=1)) & (centre_l <= lw[:, left + 1:].min(axis=1))
+    is_high = (centre_h > hw[:, :left].max(axis=1)) & (centre_h >= hw[:, left + 1 :].max(axis=1))
+    is_low = (centre_l < lw[:, :left].min(axis=1)) & (centre_l <= lw[:, left + 1 :].min(axis=1))
     for j in np.nonzero(is_high | is_low)[0]:
         i = int(j + left)
         if is_high[j]:
@@ -177,8 +181,16 @@ def compute_structure_states(df: pd.DataFrame, left: int = 3, right: int = 3) ->
         trend[t] = state
         last_high[t] = ref_high
         last_low[t] = ref_low
-    return StructureStates(trend=trend, last_high=last_high, last_low=last_low, event=event, sweep=sweep,
-                           sweep_level=sweep_level, swings=alt, history=history)
+    return StructureStates(
+        trend=trend,
+        last_high=last_high,
+        last_low=last_low,
+        event=event,
+        sweep=sweep,
+        sweep_level=sweep_level,
+        swings=alt,
+        history=history,
+    )
 
 
 # --------------------------------------------------------------------- snapshot
@@ -255,8 +267,9 @@ class StructureSnapshot(BaseModel):
     heuristic_note: str = HEURISTIC_NOTE
 
 
-def cluster_levels(swings: list[Swing], index: pd.DatetimeIndex, price: float, atr: float,
-                   t: int, max_levels: int = 4) -> tuple[list[Level], list[Level]]:
+def cluster_levels(
+    swings: list[Swing], index: pd.DatetimeIndex, price: float, atr: float, t: int, max_levels: int = 4
+) -> tuple[list[Level], list[Level]]:
     if not swings or atr <= 0 or np.isnan(atr):
         return [], []
     tol = 0.35 * atr
@@ -267,35 +280,49 @@ def cluster_levels(swings: list[Swing], index: pd.DatetimeIndex, price: float, a
             clusters[-1].append(s)
         else:
             clusters.append([s])
-    supports, resistances = [], []
+    supports: list[Level] = []
+    resistances: list[Level] = []
     for c in clusters:
         lvl = float(np.mean([s.price for s in c]))
         last_bar = max(s.index for s in c)
         recency = max(0.0, 1.0 - (t - last_bar) / 300.0)
         strength = round(len(c) + recency, 3)
-        level = Level(price=lvl, kind="SUPPORT" if lvl < price else "RESISTANCE", touches=len(c),
-                      last_touch=index[last_bar].isoformat(), strength=strength,
-                      distance_atr=round((lvl - price) / atr, 3))
+        level = Level(
+            price=lvl,
+            kind="SUPPORT" if lvl < price else "RESISTANCE",
+            touches=len(c),
+            last_touch=index[last_bar].isoformat(),
+            strength=strength,
+            distance_atr=round((lvl - price) / atr, 3),
+        )
         (supports if lvl < price else resistances).append(level)
     supports.sort(key=lambda lv: price - lv.price)
     resistances.sort(key=lambda lv: lv.price - price)
     return supports[:max_levels], resistances[:max_levels]
 
 
-def liquidity_zones(swings: list[Swing], df: pd.DataFrame, atr: float, t: int, intraday: bool) -> list[LiquidityZone]:
+def liquidity_zones(
+    swings: list[Swing], df: pd.DataFrame, atr: float, t: int, intraday: bool
+) -> list[LiquidityZone]:
     zones: list[LiquidityZone] = []
     if atr > 0 and not np.isnan(atr):
         tol = 0.15 * atr
         for kind, label in (("HIGH", "EQUAL_HIGHS"), ("LOW", "EQUAL_LOWS")):
             pts = sorted([s for s in swings if s.kind == kind][-12:], key=lambda s: s.price)
             group: list[Swing] = []
-            for s in pts + [None]:  # type: ignore[list-item]
+            for s in [*pts, None]:
                 if s is not None and group and s.price - group[-1].price <= tol:
                     group.append(s)
                     continue
                 if len(group) >= 2:
-                    zones.append(LiquidityZone(kind=label, price=float(np.mean([g.price for g in group])), touches=len(group),
-                                               note="Equal swing extremes; stops are commonly assumed to rest beyond them (heuristic)"))
+                    zones.append(
+                        LiquidityZone(
+                            kind=label,
+                            price=float(np.mean([g.price for g in group])),
+                            touches=len(group),
+                            note="Equal swing extremes; stops are commonly assumed to rest beyond them (heuristic)",
+                        )
+                    )
                 group = [s] if s is not None else []
     if intraday and t > 0:
         idx = df.index[: t + 1]
@@ -304,10 +331,22 @@ def liquidity_zones(swings: list[Swing], df: pd.DataFrame, atr: float, t: int, i
         if len(prev):
             last_day = prev.index[-1].floor("D")
             pd_bars = prev[prev.index >= last_day]
-            zones.append(LiquidityZone(kind="PRIOR_DAY_HIGH", price=float(pd_bars["high"].max()), heuristic=False,
-                                       note="Prior session high (objective level)"))
-            zones.append(LiquidityZone(kind="PRIOR_DAY_LOW", price=float(pd_bars["low"].min()), heuristic=False,
-                                       note="Prior session low (objective level)"))
+            zones.append(
+                LiquidityZone(
+                    kind="PRIOR_DAY_HIGH",
+                    price=float(pd_bars["high"].max()),
+                    heuristic=False,
+                    note="Prior session high (objective level)",
+                )
+            )
+            zones.append(
+                LiquidityZone(
+                    kind="PRIOR_DAY_LOW",
+                    price=float(pd_bars["low"].min()),
+                    heuristic=False,
+                    note="Prior session low (objective level)",
+                )
+            )
     return zones
 
 
@@ -315,8 +354,15 @@ def _point(s: Swing, index: pd.DatetimeIndex) -> SwingPoint:
     return SwingPoint(timestamp=index[s.index].isoformat(), price=s.price, kind=s.kind, label=s.label)
 
 
-def analyze_structure(df: pd.DataFrame, features: pd.DataFrame, intraday: bool = True, left: int = 3,
-                      right: int = 3, states: StructureStates | None = None, t: int | None = None) -> StructureSnapshot:
+def analyze_structure(
+    df: pd.DataFrame,
+    features: pd.DataFrame,
+    intraday: bool = True,
+    left: int = 3,
+    right: int = 3,
+    states: StructureStates | None = None,
+    t: int | None = None,
+) -> StructureSnapshot:
     """Structure snapshot at bar t (default: last bar) using only data <= t."""
     n = len(df)
     t = n - 1 if t is None else t
@@ -335,8 +381,13 @@ def analyze_structure(df: pd.DataFrame, features: pd.DataFrame, intraday: bool =
         e = int(ev_idx[-1])
         typ, direction = EVENT_NAMES[int(states.event[e])]
         lvl = states.last_high[e] if direction == "BULLISH" else states.last_low[e]
-        last_event = StructureEvent(type=typ, direction=direction, level=None if np.isnan(lvl) else float(lvl),
-                                    timestamp=index[e].isoformat(), bars_ago=t - e)
+        last_event = StructureEvent(
+            type=typ,
+            direction=direction,
+            level=None if np.isnan(lvl) else float(lvl),
+            timestamp=index[e].isoformat(),
+            bars_ago=t - e,
+        )
 
     lookback_swings = [s for s in swings if s.index >= t - 300]
     supports, resistances = cluster_levels(lookback_swings, index, price, atr, t)
@@ -346,17 +397,24 @@ def analyze_structure(df: pd.DataFrame, features: pd.DataFrame, intraday: bool =
     er = features["er20"].iloc[t]
     adx_v = features["adx"].iloc[t]
     if not any(np.isnan(v) for v in (r_atr, er, adx_v)):
-        rng = RangeInfo(is_range=bool(r_atr <= 6.0 and er < 0.30 and adx_v < 22.0),
-                        high=float(features["prior_high20"].iloc[t]), low=float(features["prior_low20"].iloc[t]),
-                        height_atr=round(float(r_atr), 3))
+        rng = RangeInfo(
+            is_range=bool(r_atr <= 6.0 and er < 0.30 and adx_v < 22.0),
+            high=float(features["prior_high20"].iloc[t]),
+            low=float(features["prior_low20"].iloc[t]),
+            height_atr=round(float(r_atr), 3),
+        )
 
     breakout = _breakout(df, features, t)
     sweep = None
-    sw_idx = np.nonzero(states.sweep[max(0, t - 5): t + 1])[0]
+    sw_idx = np.nonzero(states.sweep[max(0, t - 5) : t + 1])[0]
     if len(sw_idx):
         j = int(sw_idx[-1]) + max(0, t - 5)
-        sweep = SweepInfo(direction="BULLISH" if states.sweep[j] == 1 else "BEARISH", level=float(states.sweep_level[j]),
-                          timestamp=index[j].isoformat(), bars_ago=t - j)
+        sweep = SweepInfo(
+            direction="BULLISH" if states.sweep[j] == 1 else "BEARISH",
+            level=float(states.sweep_level[j]),
+            timestamp=index[j].isoformat(),
+            bars_ago=t - j,
+        )
 
     labels = [s.label for s in swings[-6:] if s.label]
     return StructureSnapshot(
@@ -392,7 +450,9 @@ def _breakout(df: pd.DataFrame, features: pd.DataFrame, t: int, lookback: int = 
             direction, level = "BEARISH", float(pl[b])
         if direction is None:
             continue
-        info = BreakoutInfo(direction=direction, level=level, timestamp=df.index[b].isoformat(), bars_ago=t - b)
+        info = BreakoutInfo(
+            direction=direction, level=level, timestamp=df.index[b].isoformat(), bars_ago=t - b
+        )
         for j in range(b + 1, t + 1):
             a = atr[j] if not np.isnan(atr[j]) else atr[b]
             if direction == "BULLISH":

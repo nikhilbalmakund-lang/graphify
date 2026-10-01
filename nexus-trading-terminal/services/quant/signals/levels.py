@@ -37,13 +37,21 @@ def build_levels(ctx: SignalContext, d: int, cfg: SignalConfig) -> tuple[LevelPl
     candidates: list[tuple[float, str]] = []
     if d > 0:
         if st.last_swing_low and st.last_swing_low.price < entry_mkt:
-            candidates.append((st.last_swing_low.price, f"last swing low ({st.last_swing_low.label or 'swing'})"))
-        candidates += [(lv.price, f"support ({lv.touches} touches)") for lv in st.supports if lv.price < entry_mkt]
+            candidates.append(
+                (st.last_swing_low.price, f"last swing low ({st.last_swing_low.label or 'swing'})")
+            )
+        candidates += [
+            (lv.price, f"support ({lv.touches} touches)") for lv in st.supports if lv.price < entry_mkt
+        ]
         candidates.sort(key=lambda c: -c[0])
     else:
         if st.last_swing_high and st.last_swing_high.price > entry_mkt:
-            candidates.append((st.last_swing_high.price, f"last swing high ({st.last_swing_high.label or 'swing'})"))
-        candidates += [(lv.price, f"resistance ({lv.touches} touches)") for lv in st.resistances if lv.price > entry_mkt]
+            candidates.append(
+                (st.last_swing_high.price, f"last swing high ({st.last_swing_high.label or 'swing'})")
+            )
+        candidates += [
+            (lv.price, f"resistance ({lv.touches} touches)") for lv in st.resistances if lv.price > entry_mkt
+        ]
         candidates.sort(key=lambda c: c[0])
 
     chosen: tuple[float, str] | None = None
@@ -74,9 +82,12 @@ def build_levels(ctx: SignalContext, d: int, cfg: SignalConfig) -> tuple[LevelPl
             pullbacks.append((st.breakout.level, "retest of broken level"))
         levels = st.supports if d > 0 else st.resistances
         pullbacks += [(lv.price, "retest of support" if d > 0 else "retest of resistance") for lv in levels]
-        valid = [(p, why) for p, why in pullbacks
-                 if (d > 0 and stop + 0.6 * atr <= p < entry_mkt - 0.2 * atr)
-                 or (d < 0 and entry_mkt + 0.2 * atr < p <= stop - 0.6 * atr)]
+        valid = [
+            (p, why)
+            for p, why in pullbacks
+            if (d > 0 and stop + 0.6 * atr <= p < entry_mkt - 0.2 * atr)
+            or (d < 0 and entry_mkt + 0.2 * atr < p <= stop - 0.6 * atr)
+        ]
         if valid:
             p, _why = max(valid, key=lambda x: x[0]) if d > 0 else min(valid, key=lambda x: x[0])
             entry_type = EntryType.ZONE
@@ -90,30 +101,51 @@ def build_levels(ctx: SignalContext, d: int, cfg: SignalConfig) -> tuple[LevelPl
     # ---- targets
     if d > 0:
         structural = [(lv.price, f"resistance {_fmt(lv.price, prec)}") for lv in st.resistances]
-        structural += [(z.price, f"{z.kind.replace('_', ' ').lower()} {_fmt(z.price, prec)}" + (" (heuristic)" if z.heuristic else ""))
-                       for z in st.liquidity_zones if z.kind in ("EQUAL_HIGHS", "PRIOR_DAY_HIGH")]
+        structural += [
+            (
+                z.price,
+                f"{z.kind.replace('_', ' ').lower()} {_fmt(z.price, prec)}"
+                + (" (heuristic)" if z.heuristic else ""),
+            )
+            for z in st.liquidity_zones
+            if z.kind in ("EQUAL_HIGHS", "PRIOR_DAY_HIGH")
+        ]
         if st.last_swing_high:
-            structural.append((st.last_swing_high.price, f"last swing high {_fmt(st.last_swing_high.price, prec)}"))
+            structural.append(
+                (st.last_swing_high.price, f"last swing high {_fmt(st.last_swing_high.price, prec)}")
+            )
         structural = sorted({round(p, prec + 2): (p, why) for p, why in structural if p > entry}.values())
     else:
         structural = [(lv.price, f"support {_fmt(lv.price, prec)}") for lv in st.supports]
-        structural += [(z.price, f"{z.kind.replace('_', ' ').lower()} {_fmt(z.price, prec)}" + (" (heuristic)" if z.heuristic else ""))
-                       for z in st.liquidity_zones if z.kind in ("EQUAL_LOWS", "PRIOR_DAY_LOW")]
+        structural += [
+            (
+                z.price,
+                f"{z.kind.replace('_', ' ').lower()} {_fmt(z.price, prec)}"
+                + (" (heuristic)" if z.heuristic else ""),
+            )
+            for z in st.liquidity_zones
+            if z.kind in ("EQUAL_LOWS", "PRIOR_DAY_LOW")
+        ]
         if st.last_swing_low:
-            structural.append((st.last_swing_low.price, f"last swing low {_fmt(st.last_swing_low.price, prec)}"))
-        structural = sorted({round(p, prec + 2): (p, why) for p, why in structural if p < entry}.values(), reverse=True)
+            structural.append(
+                (st.last_swing_low.price, f"last swing low {_fmt(st.last_swing_low.price, prec)}")
+            )
+        structural = sorted(
+            {round(p, prec + 2): (p, why) for p, why in structural if p < entry}.values(), reverse=True
+        )
 
     def rr_of(p: float) -> float:
         return abs(p - entry) / risk
 
     targets: list[TargetLevel] = []
-    floors = [1.0, None, None]
     fallbacks = [1.5, 2.5, 4.0]
     caps = [6.0, 8.0, 10.0]
     used: set[float] = set()
     for i in range(3):
-        floor = floors[i] if i == 0 else (targets[-1].rr + 0.5)
-        pick = next(((p, why) for p, why in structural if p not in used and floor <= rr_of(p) <= caps[i]), None)
+        floor = 1.0 if i == 0 else targets[-1].rr + 0.5
+        pick = next(
+            ((p, why) for p, why in structural if p not in used and floor <= rr_of(p) <= caps[i]), None
+        )
         if pick:
             price, basis = pick[0], f"STRUCTURE: {pick[1]}"
             used.add(pick[0])
@@ -121,19 +153,32 @@ def build_levels(ctx: SignalContext, d: int, cfg: SignalConfig) -> tuple[LevelPl
             r = max(fallbacks[i], floor)
             price = entry + d * r * risk
             basis = f"R-MULTIPLE: {r:.1f}R (no structural level in range)"
-        targets.append(TargetLevel(label=f"TP{i + 1}", price=round(price, prec), rr=round(rr_of(price), 2), basis=basis,
-                                   allocation=cfg.exit_plan[i]))
+        targets.append(
+            TargetLevel(
+                label=f"TP{i + 1}",
+                price=round(price, prec),
+                rr=round(rr_of(price), 2),
+                basis=basis,
+                allocation=cfg.exit_plan[i],
+            )
+        )
 
     eff = sum(t.rr * t.allocation for t in targets)
     side_word = "below" if d > 0 else "above"
     plan = LevelPlan(
-        entry_type=entry_type, entry_price=round(entry, prec),
+        entry_type=entry_type,
+        entry_price=round(entry, prec),
         entry_zone_low=round(zone_low, prec) if zone_low is not None else None,
         entry_zone_high=round(zone_high, prec) if zone_high is not None else None,
-        stop=round(stop, prec), invalidation_level=round(inval_level, prec),
+        stop=round(stop, prec),
+        invalidation_level=round(inval_level, prec),
         invalidation_text=f"A {ctx.timeframe} close {side_word} {_fmt(inval_level, prec)} ({inval_basis}) invalidates the setup.",
         stop_basis=f"{inval_basis} {_fmt(inval_level, prec)} with a {cfg.stop_buffer_atr:.2f} ATR buffer",
-        targets=targets, risk_distance=round(risk, prec + 2), reward_distance=round(abs(targets[-1].price - entry), prec + 2),
-        rr=round(targets[-1].rr, 2), effective_rr=round(eff, 2), risk_atr=round(risk / atr, 2),
+        targets=targets,
+        risk_distance=round(risk, prec + 2),
+        reward_distance=round(abs(targets[-1].price - entry), prec + 2),
+        rr=round(targets[-1].rr, 2),
+        effective_rr=round(eff, 2),
+        risk_atr=round(risk / atr, 2),
     )
     return plan, ""

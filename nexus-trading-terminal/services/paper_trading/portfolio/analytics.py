@@ -64,9 +64,15 @@ def _group(trades: list[ClosedTrade], key: str) -> list[GroupStats]:
     out = []
     for k, items in sorted(agg.items()):
         rs = [i.r_multiple for i in items if i.r_multiple is not None]
-        out.append(GroupStats(key=k, trades=len(items), pnl=round(sum(i.pnl for i in items), 2),
-                              win_rate=round(sum(1 for i in items if i.pnl > 0) / len(items), 4),
-                              expectancy_r=round(float(np.mean(rs)), 3) if rs else None))
+        out.append(
+            GroupStats(
+                key=k,
+                trades=len(items),
+                pnl=round(sum(i.pnl for i in items), 2),
+                win_rate=round(sum(1 for i in items if i.pnl > 0) / len(items), 4),
+                expectancy_r=round(float(np.mean(rs)), 3) if rs else None,
+            )
+        )
     return out
 
 
@@ -79,17 +85,38 @@ def performance_report(rows: Iterable[ClosedTrade]) -> PerformanceReport:
     dist: dict[str, int] = {}
     if rs:
         edges = [-np.inf, -1.5, -1, -0.5, 0, 0.5, 1, 2, 3, np.inf]
-        labels = ["<-1.5R", "-1.5..-1R", "-1..-0.5R", "-0.5..0R", "0..0.5R", "0.5..1R", "1..2R", "2..3R", ">3R"]
+        labels = [
+            "<-1.5R",
+            "-1.5..-1R",
+            "-1..-0.5R",
+            "-0.5..0R",
+            "0..0.5R",
+            "0.5..1R",
+            "1..2R",
+            "2..3R",
+            ">3R",
+        ]
         counts, _ = np.histogram(rs, bins=edges)
         dist = {lbl: int(c) for lbl, c in zip(labels, counts, strict=True)}
     n = len(trades)
-    note = "No closed trades yet" if n == 0 else (
-        f"Small sample ({n} trades): statistics are not reliable" if n < 30 else f"{n} trades")
+    note = (
+        "No closed trades yet"
+        if n == 0
+        else (f"Small sample ({n} trades): statistics are not reliable" if n < 30 else f"{n} trades")
+    )
     return PerformanceReport(
-        trades=n, win_rate=round(sum(1 for p in pnls if p > 0) / n, 4) if n else None,
+        trades=n,
+        win_rate=round(sum(1 for p in pnls if p > 0) / n, 4) if n else None,
         expectancy=round(float(np.mean(pnls)), 2) if n else None,
-        expectancy_r=round(float(np.mean(rs)), 3) if rs else None, total_pnl=round(float(sum(pnls)), 2),
-        max_drawdown=round(dd, 2), daily=_period(trades, "%Y-%m-%d"), weekly=_period(trades, "%G-W%V"),
-        monthly=_period(trades, "%Y-%m"), by_strategy=_group(trades, "strategy"), by_asset=_group(trades, "symbol"),
-        by_regime=_group(trades, "regime"), r_distribution=dist, sample_note=note,
+        expectancy_r=round(float(np.mean(rs)), 3) if rs else None,
+        total_pnl=round(float(sum(pnls)), 2),
+        max_drawdown=round(dd, 2),
+        daily=_period(trades, "%Y-%m-%d"),
+        weekly=_period(trades, "%G-W%V"),
+        monthly=_period(trades, "%Y-%m"),
+        by_strategy=_group(trades, "strategy"),
+        by_asset=_group(trades, "symbol"),
+        by_regime=_group(trades, "regime"),
+        r_distribution=dist,
+        sample_note=note,
     )

@@ -4,20 +4,31 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from backtesting.engine.engine import Backtester, BacktestConfig
+from backtesting.engine.engine import BacktestConfig, Backtester
 from backtesting.metrics.metrics import TradeLike, compute_metrics, losing_periods
 from backtesting.strategies.base import BarView, LookAheadError, SeriesData, Strategy, StrategyVote
 from backtesting.strategies.ensemble import StrategyPerf, combine_votes
 from backtesting.strategies.library import REGISTRY, create
 from backtesting.validation.walk_forward import WalkForwardConfig, run_walk_forward
 from market_data.assets import DEFAULT_CATALOG
-from market_data.models import AssetSpec, AssetClass, SessionType, Timeframe
+from market_data.models import AssetClass, AssetSpec, SessionType, Timeframe
 from market_data.providers.demo import DemoMarketDataProvider
 from quant.signals.models import Direction
 
 NOW = datetime(2026, 10, 1, 14, 30, 27, tzinfo=UTC)
-SPEC = AssetSpec(symbol="TEST", name="Test", asset_class=AssetClass.CRYPTO, session=SessionType.CRYPTO, base="TST",
-                 quote="USD", contract_size=1, min_lot=1, lot_step=1, max_lot=1_000_000, typical_spread=0.0)
+SPEC = AssetSpec(
+    symbol="TEST",
+    name="Test",
+    asset_class=AssetClass.CRYPTO,
+    session=SessionType.CRYPTO,
+    base="TST",
+    quote="USD",
+    contract_size=1,
+    min_lot=1,
+    lot_step=1,
+    max_lot=1_000_000,
+    typical_spread=0.0,
+)
 
 
 def bars(rows):
@@ -77,8 +88,16 @@ def test_gap_through_stop_fills_at_open_not_stop():
 def test_spread_slippage_and_commission_are_charged():
     rows = [FLAT, FLAT, [101, 112, 100, 111], FLAT]
     data = SeriesData(bars(rows), Timeframe.H1)
-    cfg = BacktestConfig(symbol="TEST", timeframe="1H", strategy="OneShot", spread=0.2, slippage_bps=10,
-                         commission_per_lot=1.0, partial_exit_r=None, max_daily_loss=None)
+    cfg = BacktestConfig(
+        symbol="TEST",
+        timeframe="1H",
+        strategy="OneShot",
+        spread=0.2,
+        slippage_bps=10,
+        commission_per_lot=1.0,
+        partial_exit_r=None,
+        max_daily_loss=None,
+    )
     t = Backtester(data, SPEC, cfg).run(OneShot()).trades[0]
     assert t.entry_price == pytest.approx(101 + 0.1 + 101 * 0.001)
     assert t.exit_price == pytest.approx(110 - 0.1 - 110 * 0.001)
@@ -125,7 +144,11 @@ def test_strategies_have_no_lookahead(demo_series, name):
     strat = create(name)
     for t in range(cut - 200, cut + 1, 7):
         a, b = strat.vote(BarView(full, t)), strat.vote(BarView(part, t))
-        assert a.direction == b.direction and a.stop == pytest.approx(b.stop) and a.target == pytest.approx(b.target)
+        assert (
+            a.direction == b.direction
+            and a.stop == pytest.approx(b.stop)
+            and a.target == pytest.approx(b.target)
+        )
 
 
 def test_backtest_prefix_consistency(demo_series):
@@ -134,16 +157,25 @@ def test_backtest_prefix_consistency(demo_series):
     cfg = BacktestConfig(symbol="XAUUSD", timeframe="1H", strategy="MarketStructure")
     full = Backtester(SeriesData(demo_series, Timeframe.H1), spec, cfg).run(create("MarketStructure"))
     cut = demo_series.index[3000]
-    part = Backtester(SeriesData(demo_series.loc[:cut], Timeframe.H1), spec, cfg).run(create("MarketStructure"))
-    early_full = [(t.entry_time, t.exit_time, t.pnl) for t in full.trades if t.exit_time < cut - pd.Timedelta(hours=2)]
-    early_part = [(t.entry_time, t.exit_time, t.pnl) for t in part.trades if t.exit_time < cut - pd.Timedelta(hours=2)]
+    part = Backtester(SeriesData(demo_series.loc[:cut], Timeframe.H1), spec, cfg).run(
+        create("MarketStructure")
+    )
+    early_full = [
+        (t.entry_time, t.exit_time, t.pnl) for t in full.trades if t.exit_time < cut - pd.Timedelta(hours=2)
+    ]
+    early_part = [
+        (t.entry_time, t.exit_time, t.pnl) for t in part.trades if t.exit_time < cut - pd.Timedelta(hours=2)
+    ]
     assert early_full == early_part and len(early_full) > 3
 
 
 def test_demo_backtests_are_labelled(demo_series):
     spec = DEFAULT_CATALOG.get("XAUUSD")
-    res = Backtester(SeriesData(demo_series, Timeframe.H1), spec,
-                     BacktestConfig(symbol="XAUUSD", timeframe="1H", strategy="Breakout")).run(create("Breakout"))
+    res = Backtester(
+        SeriesData(demo_series, Timeframe.H1),
+        spec,
+        BacktestConfig(symbol="XAUUSD", timeframe="1H", strategy="Breakout"),
+    ).run(create("Breakout"))
     assert res.is_demo and "DEMO" in res.data_label and any("DEMO DATA" in w for w in res.warnings)
     assert res.equity_curve and res.drawdown_curve
 
@@ -151,9 +183,22 @@ def test_demo_backtests_are_labelled(demo_series):
 def test_metrics_known_values():
     t0 = datetime(2025, 1, 1, tzinfo=UTC)
     pnls = [100, -50, -50, 200, -50]
-    trades = [TradeLike(pnl=p, pnl_r=p / 50, entry_time=t0, exit_time=t0, bars_held=2, regime="RANGING" if i % 2 else "TRENDING_BULLISH")
-              for i, p in enumerate(pnls)]
-    eq = pd.Series(np.cumsum([10_000] + pnls), index=pd.date_range("2025-01-01", periods=6, freq="7D", tz="UTC"), dtype=float)
+    trades = [
+        TradeLike(
+            pnl=p,
+            pnl_r=p / 50,
+            entry_time=t0,
+            exit_time=t0,
+            bars_held=2,
+            regime="RANGING" if i % 2 else "TRENDING_BULLISH",
+        )
+        for i, p in enumerate(pnls)
+    ]
+    eq = pd.Series(
+        np.cumsum([10_000, *pnls]),
+        index=pd.date_range("2025-01-01", periods=6, freq="7D", tz="UTC"),
+        dtype=float,
+    )
     b = compute_metrics(trades, eq, [True, False, True, False, True, False])
     m = b.metrics
     assert m.total_trades == 5 and m.wins == 2 and m.losses == 3
@@ -169,7 +214,11 @@ def test_metrics_known_values():
 
 
 def test_losing_periods_are_reported():
-    eq = pd.Series([100, 110, 90, 95, 112, 100, 98], index=pd.date_range("2025-01-01", periods=7, freq="D", tz="UTC"), dtype=float)
+    eq = pd.Series(
+        [100, 110, 90, 95, 112, 100, 98],
+        index=pd.date_range("2025-01-01", periods=7, freq="D", tz="UTC"),
+        dtype=float,
+    )
     lp = losing_periods(eq)
     assert lp[0].depth_pct == pytest.approx(18.18, abs=0.01) and lp[0].recovered
     assert any(not p.recovered for p in lp)
@@ -178,28 +227,43 @@ def test_losing_periods_are_reported():
 def test_ensemble_rules():
     def v(name, d, s=1.0, app=True):
         return StrategyVote(strategy=name, version="1", direction=d, strength=s, applicable=app)
-    agree = combine_votes([v("A", Direction.LONG), v("B", Direction.LONG), v("C", Direction.NO_TRADE)], "TRENDING_BULLISH")
+
+    agree = combine_votes(
+        [v("A", Direction.LONG), v("B", Direction.LONG), v("C", Direction.NO_TRADE)], "TRENDING_BULLISH"
+    )
     assert agree.net_direction == Direction.LONG and agree.agreement == 1.0 and not agree.conflict
     conflict = combine_votes([v("A", Direction.LONG), v("B", Direction.SHORT)], "RANGING")
     assert conflict.net_direction == Direction.NO_TRADE and conflict.conflict
     none = combine_votes([v("A", Direction.NO_TRADE)], "RANGING")
     assert none.net_direction == Direction.NO_TRADE
     perf = {("A", "RANGING"): StrategyPerf(trades=50, expectancy_r=-0.2)}
-    weighted = combine_votes([v("A", Direction.LONG), v("B", Direction.SHORT, 0.5, app=True)], "RANGING", perf)
+    weighted = combine_votes(
+        [v("A", Direction.LONG), v("B", Direction.SHORT, 0.5, app=True)], "RANGING", perf
+    )
     assert weighted.long_weight == pytest.approx(0.6)
 
 
 def test_walk_forward_segments_are_sequential(demo_series):
     spec = DEFAULT_CATALOG.get("XAUUSD")
     data = SeriesData(demo_series, Timeframe.H1, higher=Timeframe.H4)
-    cfg = WalkForwardConfig(backtest=BacktestConfig(symbol="XAUUSD", timeframe="1H", strategy="Breakout"),
-                            train_bars=1200, validation_bars=300, test_bars=300, max_windows=3,
-                            param_grid=[{"squeeze_pct": 40.0, "min_rr": 1.5}, {"squeeze_pct": 55.0, "min_rr": 2.0}])
+    cfg = WalkForwardConfig(
+        backtest=BacktestConfig(symbol="XAUUSD", timeframe="1H", strategy="Breakout"),
+        train_bars=1200,
+        validation_bars=300,
+        test_bars=300,
+        max_windows=3,
+        param_grid=[{"squeeze_pct": 40.0, "min_rr": 1.5}, {"squeeze_pct": 55.0, "min_rr": 2.0}],
+    )
     wf = run_walk_forward(data, spec, cfg)
     assert len(wf.windows) == 3
     for w in wf.windows:
         assert w.train.end < w.validation.start <= w.validation.end < w.test.start
         assert w.candidates_evaluated == 2
     assert wf.windows[1].test.start > wf.windows[0].test.start
-    assert all(wf.windows[0].test.start <= str(t.entry_time.isoformat()).replace("T", " ") for t in wf.oos_trades) or wf.oos_trades == []
+    assert (
+        all(
+            wf.windows[0].test.start <= str(t.entry_time.isoformat()).replace("T", " ") for t in wf.oos_trades
+        )
+        or wf.oos_trades == []
+    )
     assert "DEMO" in wf.data_label

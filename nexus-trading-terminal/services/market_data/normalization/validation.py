@@ -75,7 +75,9 @@ def stale_threshold(timeframe: Timeframe) -> timedelta:
     return timedelta(seconds=max(2 * timeframe.seconds, 180))
 
 
-def _expected_bar_opens(first: pd.Timestamp, last: pd.Timestamp, timeframe: Timeframe, spec: AssetSpec) -> pd.DatetimeIndex:
+def _expected_bar_opens(
+    first: pd.Timestamp, last: pd.Timestamp, timeframe: Timeframe, spec: AssetSpec
+) -> pd.DatetimeIndex:
     grid = pd.date_range(first, last, freq=timeframe.pandas_rule)
     if len(grid) == 0:
         return grid
@@ -84,12 +86,20 @@ def _expected_bar_opens(first: pd.Timestamp, last: pd.Timestamp, timeframe: Time
     return grid[tradable]
 
 
-def validate_series(series: CandleSeries, spec: AssetSpec, now: datetime | None = None) -> tuple[CandleSeries, DataQualityReport]:
+def validate_series(
+    series: CandleSeries, spec: AssetSpec, now: datetime | None = None
+) -> tuple[CandleSeries, DataQualityReport]:
     """Validate and clean a candle series. Returns (clean_series, report)."""
     now = (now or datetime.now(UTC)).astimezone(UTC)
     df = series.df.copy()
-    report = DataQualityReport(symbol=series.symbol, timeframe=series.timeframe.value, provider=series.provider,
-                               is_demo=series.is_demo, bars=len(df), checked_at=now)
+    report = DataQualityReport(
+        symbol=series.symbol,
+        timeframe=series.timeframe.value,
+        provider=series.provider,
+        is_demo=series.is_demo,
+        bars=len(df),
+        checked_at=now,
+    )
 
     if df.empty:
         report.add("INSUFFICIENT_DATA", IssueSeverity.CRITICAL, 0, "No candles returned")
@@ -98,35 +108,55 @@ def validate_series(series: CandleSeries, spec: AssetSpec, now: datetime | None 
 
     missing_cols = [c for c in OHLCV_COLUMNS if c not in df.columns]
     if missing_cols:
-        report.add("INVALID_MARKET_DATA", IssueSeverity.CRITICAL, len(missing_cols), f"Missing columns {missing_cols}")
+        report.add(
+            "INVALID_MARKET_DATA",
+            IssueSeverity.CRITICAL,
+            len(missing_cols),
+            f"Missing columns {missing_cols}",
+        )
         report.quality_score = 0.0
         return series, report
 
     if not isinstance(df.index, pd.DatetimeIndex) or df.index.tz is None:
-        report.add("TIMESTAMP_INVALID", IssueSeverity.CRITICAL, len(df), "Index must be a tz-aware DatetimeIndex")
+        report.add(
+            "TIMESTAMP_INVALID", IssueSeverity.CRITICAL, len(df), "Index must be a tz-aware DatetimeIndex"
+        )
         report.quality_score = 0.0
         return series, report
 
     total = len(df)
     nat = df.index.isna()
     if nat.any():
-        report.add("TIMESTAMP_INVALID", IssueSeverity.WARNING, int(nat.sum()), "Rows without a timestamp removed")
+        report.add(
+            "TIMESTAMP_INVALID", IssueSeverity.WARNING, int(nat.sum()), "Rows without a timestamp removed"
+        )
         df = df[~nat]
 
     if not df.index.is_monotonic_increasing:
-        report.add("TIMESTAMP_ORDER", IssueSeverity.WARNING, 0, "Candles were out of order and have been sorted")
+        report.add(
+            "TIMESTAMP_ORDER", IssueSeverity.WARNING, 0, "Candles were out of order and have been sorted"
+        )
         df = df.sort_index()
 
     dup = df.index.duplicated(keep="last")
     if dup.any():
         report.duplicate_bars = int(dup.sum())
-        report.add("DUPLICATE_CANDLES", IssueSeverity.WARNING, report.duplicate_bars, "Duplicate timestamps removed (kept latest)")
+        report.add(
+            "DUPLICATE_CANDLES",
+            IssueSeverity.WARNING,
+            report.duplicate_bars,
+            "Duplicate timestamps removed (kept latest)",
+        )
         df = df[~dup]
 
     future = df.index > pd.Timestamp(now + timedelta(seconds=series.timeframe.seconds))
     if future.any():
-        report.add("TIMESTAMP_FUTURE", IssueSeverity.CRITICAL if future.sum() > 1 else IssueSeverity.WARNING,
-                   int(future.sum()), "Candles timestamped in the future removed")
+        report.add(
+            "TIMESTAMP_FUTURE",
+            IssueSeverity.CRITICAL if future.sum() > 1 else IssueSeverity.WARNING,
+            int(future.sum()),
+            "Candles timestamped in the future removed",
+        )
         df = df[~future]
 
     o, h, low, c, v = (df[col].to_numpy(dtype="float64") for col in OHLCV_COLUMNS)
@@ -134,21 +164,43 @@ def validate_series(series: CandleSeries, spec: AssetSpec, now: datetime | None 
     eps = 1e-9 * np.nanmax(np.abs(c)) if len(c) else 0.0
     with np.errstate(invalid="ignore"):
         bad_ohlc = (~nan_rows) & (
-            (h + eps < np.maximum(o, c)) | (low - eps > np.minimum(o, c)) | (h + eps < low) | (o <= 0) | (h <= 0) | (low <= 0) | (c <= 0)
+            (h + eps < np.maximum(o, c))
+            | (low - eps > np.minimum(o, c))
+            | (h + eps < low)
+            | (o <= 0)
+            | (h <= 0)
+            | (low <= 0)
+            | (c <= 0)
         )
         neg_vol = (~np.isnan(v)) & (v < 0)
     invalid = nan_rows | bad_ohlc | neg_vol
     if nan_rows.any():
-        report.add("MISSING_VALUES", IssueSeverity.WARNING, int(nan_rows.sum()), "Rows with NaN prices rejected")
+        report.add(
+            "MISSING_VALUES", IssueSeverity.WARNING, int(nan_rows.sum()), "Rows with NaN prices rejected"
+        )
     if bad_ohlc.any():
-        report.add("INVALID_OHLC", IssueSeverity.WARNING, int(bad_ohlc.sum()), "Rows violating OHLC relationships rejected")
+        report.add(
+            "INVALID_OHLC",
+            IssueSeverity.WARNING,
+            int(bad_ohlc.sum()),
+            "Rows violating OHLC relationships rejected",
+        )
     if neg_vol.any():
         report.negative_volume = int(neg_vol.sum())
-        report.add("NEGATIVE_VOLUME", IssueSeverity.WARNING, report.negative_volume, "Rows with negative volume rejected")
+        report.add(
+            "NEGATIVE_VOLUME",
+            IssueSeverity.WARNING,
+            report.negative_volume,
+            "Rows with negative volume rejected",
+        )
     report.invalid_rows = int(invalid.sum())
     if total and report.invalid_rows / total > MAX_INVALID_FRACTION:
-        report.add("INVALID_MARKET_DATA", IssueSeverity.CRITICAL, report.invalid_rows,
-                   f"{report.invalid_rows}/{total} rows invalid (> {MAX_INVALID_FRACTION:.0%}); series rejected")
+        report.add(
+            "INVALID_MARKET_DATA",
+            IssueSeverity.CRITICAL,
+            report.invalid_rows,
+            f"{report.invalid_rows}/{total} rows invalid (> {MAX_INVALID_FRACTION:.0%}); series rejected",
+        )
     df = df[~invalid]
 
     if len(df) >= 3:
@@ -157,7 +209,9 @@ def validate_series(series: CandleSeries, spec: AssetSpec, now: datetime | None 
         if med > 0:
             spikes = int((logret > SPIKE_MULTIPLE * med * 4).sum())
             if spikes:
-                report.add("PRICE_SPIKE", IssueSeverity.WARNING, spikes, "Unusually large bar-to-bar moves detected")
+                report.add(
+                    "PRICE_SPIKE", IssueSeverity.WARNING, spikes, "Unusually large bar-to-bar moves detected"
+                )
 
     if len(df) >= 2 and series.timeframe != Timeframe.W1:
         expected = _expected_bar_opens(df.index[0], df.index[-1], series.timeframe, spec)
@@ -167,7 +221,7 @@ def validate_series(series: CandleSeries, spec: AssetSpec, now: datetime | None 
             limit = 1.5 if spec.session.value == "CRYPTO" else 4.0
             missing = int((gaps > limit).sum())
         else:
-            missing = int(len(expected.difference(df.index)))
+            missing = len(expected.difference(df.index))
         report.missing_bars = missing
         frac = missing / max(len(expected), 1)
         if missing:
@@ -187,20 +241,33 @@ def validate_series(series: CandleSeries, spec: AssetSpec, now: datetime | None 
         report.last_bar_age_seconds = round(age, 1)
         if market_open and now - last_close_time > stale_threshold(series.timeframe):
             report.is_stale = True
-            report.add("STALE_MARKET_DATA", IssueSeverity.CRITICAL, 0,
-                       f"Last bar closed {int(age)}s ago while market is open")
+            report.add(
+                "STALE_MARKET_DATA",
+                IssueSeverity.CRITICAL,
+                0,
+                f"Last bar closed {int(age)}s ago while market is open",
+            )
         elif not market_open:
             report.add("MARKET_CLOSED", IssueSeverity.INFO, 0, reason)
 
     report.bars = len(df)
     penalty = 0.0
     for issue in report.issues:
-        penalty += {IssueSeverity.INFO: 0.0, IssueSeverity.WARNING: 0.08, IssueSeverity.CRITICAL: 0.5}[issue.severity]
+        penalty += {IssueSeverity.INFO: 0.0, IssueSeverity.WARNING: 0.08, IssueSeverity.CRITICAL: 0.5}[
+            issue.severity
+        ]
     report.quality_score = round(max(0.0, 1.0 - penalty), 3)
 
-    clean = CandleSeries(symbol=series.symbol, timeframe=series.timeframe, provider=series.provider,
-                         is_demo=series.is_demo, df=df, fetched_at=series.fetched_at,
-                         last_bar_complete=series.last_bar_complete, volume_available=series.volume_available)
+    clean = CandleSeries(
+        symbol=series.symbol,
+        timeframe=series.timeframe,
+        provider=series.provider,
+        is_demo=series.is_demo,
+        df=df,
+        fetched_at=series.fetched_at,
+        last_bar_complete=series.last_bar_complete,
+        volume_available=series.volume_available,
+    )
     return clean, report
 
 

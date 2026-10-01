@@ -24,13 +24,22 @@ FEATURE_VERSION = "1.0.0"
 MIN_BARS = 60
 
 
-def compute_indicator_frame(df: pd.DataFrame, timeframe: Timeframe, volume_available: bool = True) -> pd.DataFrame:
+def compute_indicator_frame(
+    df: pd.DataFrame, timeframe: Timeframe, volume_available: bool = True
+) -> pd.DataFrame:
     """All indicators + derived features for every bar (causal)."""
     close = df["close"].astype("float64")
     c: dict[str, pd.Series] = {
-        "close": close, "high": df["high"], "low": df["low"], "open": df["open"],
-        "sma20": ind.sma(close, 20), "sma50": ind.sma(close, 50), "ema9": ind.ema(close, 9),
-        "ema20": ind.ema(close, 20), "ema50": ind.ema(close, 50), "ema200": ind.ema(close, 200),
+        "close": close,
+        "high": df["high"],
+        "low": df["low"],
+        "open": df["open"],
+        "sma20": ind.sma(close, 20),
+        "sma50": ind.sma(close, 50),
+        "ema9": ind.ema(close, 9),
+        "ema20": ind.ema(close, 20),
+        "ema50": ind.ema(close, 50),
+        "ema200": ind.ema(close, 200),
         "rsi14": ind.rsi(close, 14),
     }
     for frame in (ind.macd(close), ind.adx(df, 14), ind.bollinger(close, 20, 2.0), ind.stochastic(df)):
@@ -53,11 +62,16 @@ def compute_indicator_frame(df: pd.DataFrame, timeframe: Timeframe, volume_avail
         vol = df["volume"].astype("float64")
         vol_sma = ind.sma(vol, 20)
         obv = ind.obv(close, vol)
-        c.update({
-            "volume": vol, "volume_sma20": vol_sma, "volume_ratio": vol / vol_sma.replace(0.0, np.nan), "obv": obv,
-            "obv_slope10": ind.linear_slope(obv, 10) / vol_sma.replace(0.0, np.nan),
-            "vwap": ind.vwap(df, "D") if timeframe.is_intraday else ind.vwap(df, rolling_bars=20),
-        })
+        c.update(
+            {
+                "volume": vol,
+                "volume_sma20": vol_sma,
+                "volume_ratio": vol / vol_sma.replace(0.0, np.nan),
+                "obv": obv,
+                "obv_slope10": ind.linear_slope(obv, 10) / vol_sma.replace(0.0, np.nan),
+                "vwap": ind.vwap(df, "D") if timeframe.is_intraday else ind.vwap(df, rolling_bars=20),
+            }
+        )
     else:
         c.update({k: nan for k in ("volume", "volume_sma20", "volume_ratio", "obv", "obv_slope10", "vwap")})
 
@@ -184,7 +198,11 @@ class FeatureSnapshot(BaseModel):
         return "ABOVE" if self.close >= self.vwap else "BELOW"
 
 
-_SNAPSHOT_FIELDS = [name for name in FeatureSnapshot.model_fields if name not in {"feature_version", "timestamp", "close", "volume_available", "bars_available"}]
+_SNAPSHOT_FIELDS = [
+    name
+    for name in FeatureSnapshot.model_fields
+    if name not in {"feature_version", "timestamp", "close", "volume_available", "bars_available"}
+]
 
 
 def _clean(v: object) -> float | None:
@@ -202,18 +220,39 @@ def snapshot_at(frame: pd.DataFrame, i: int = -1, volume_available: bool = True)
     idx = frame.index[i]
     values = {name: _clean(row.get(name)) for name in _SNAPSHOT_FIELDS}
     pos = i if i >= 0 else len(frame) + i
-    return FeatureSnapshot(timestamp=pd.Timestamp(idx).isoformat(), close=float(row["close"]),
-                           volume_available=volume_available, bars_available=pos + 1, **values)
+    return FeatureSnapshot(
+        timestamp=pd.Timestamp(idx).isoformat(),
+        close=float(row["close"]),
+        volume_available=volume_available,
+        bars_available=pos + 1,
+        **values,
+    )
 
 
 # Compact numeric vector used for historical similarity search (order matters; versioned).
 SIMILARITY_FEATURES: list[str] = [
-    "trend_score", "momentum_score", "rsi14", "adx", "vol_percentile", "bb_width_percentile",
-    "dist_ema50_atr", "er20", "autocorr50", "bb_pct_b",
+    "trend_score",
+    "momentum_score",
+    "rsi14",
+    "adx",
+    "vol_percentile",
+    "bb_width_percentile",
+    "dist_ema50_atr",
+    "er20",
+    "autocorr50",
+    "bb_pct_b",
 ]
 SIMILARITY_SCALE: dict[str, float] = {
-    "trend_score": 100.0, "momentum_score": 100.0, "rsi14": 50.0, "adx": 25.0, "vol_percentile": 50.0,
-    "bb_width_percentile": 50.0, "dist_ema50_atr": 3.0, "er20": 0.5, "autocorr50": 0.3, "bb_pct_b": 1.0,
+    "trend_score": 100.0,
+    "momentum_score": 100.0,
+    "rsi14": 50.0,
+    "adx": 25.0,
+    "vol_percentile": 50.0,
+    "bb_width_percentile": 50.0,
+    "dist_ema50_atr": 3.0,
+    "er20": 0.5,
+    "autocorr50": 0.3,
+    "bb_pct_b": 1.0,
 }
 
 

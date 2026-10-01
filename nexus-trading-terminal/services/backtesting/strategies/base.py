@@ -44,8 +44,13 @@ class StrategyVote(BaseModel):
 class SeriesData:
     """Precomputed causal data for one series (shared by all strategies)."""
 
-    def __init__(self, df: pd.DataFrame, timeframe: Timeframe, volume_available: bool = True,
-                 higher: Timeframe | None = None):
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        timeframe: Timeframe,
+        volume_available: bool = True,
+        higher: Timeframe | None = None,
+    ):
         self.df = df
         self.timeframe = timeframe
         self.volume_available = volume_available
@@ -64,7 +69,9 @@ class SeriesData:
             htf = resample_ohlcv(df, higher)
             if len(htf) >= 60:
                 hf = compute_indicator_frame(htf, higher, volume_available)
-                span = pd.Timedelta(days=7) if higher == Timeframe.W1 else pd.Timedelta(seconds=higher.seconds)
+                span = (
+                    pd.Timedelta(days=7) if higher == Timeframe.W1 else pd.Timedelta(seconds=higher.seconds)
+                )
                 htf_close = (htf.index + span).asi8
                 bar_close = (df.index + pd.Timedelta(seconds=timeframe.seconds)).asi8
                 j = np.searchsorted(htf_close, bar_close, side="right") - 1
@@ -73,6 +80,33 @@ class SeriesData:
 
     def __len__(self) -> int:
         return len(self.df)
+
+    @classmethod
+    def from_precomputed(
+        cls,
+        df: pd.DataFrame,
+        timeframe: Timeframe,
+        frame: pd.DataFrame,
+        states: StructureStates,
+        regimes: pd.DataFrame,
+        volume_available: bool,
+        htf_trend_last: float | None,
+    ) -> SeriesData:
+        """Reuse an already-computed analysis (live path) instead of recomputing indicators."""
+        obj = cls.__new__(cls)
+        obj.df, obj.timeframe, obj.volume_available = df, timeframe, volume_available
+        obj.frame, obj.states, obj.regimes = frame, states, regimes
+        obj.open = df["open"].to_numpy(dtype="float64")
+        obj.high = df["high"].to_numpy(dtype="float64")
+        obj.low = df["low"].to_numpy(dtype="float64")
+        obj.close = df["close"].to_numpy(dtype="float64")
+        obj.cols = {c: frame[c].to_numpy(dtype="float64") for c in frame.columns}
+        obj.regime_codes = regimes["regime"].to_numpy()
+        obj.higher = None
+        obj.htf_trend = np.full(len(df), np.nan)
+        if htf_trend_last is not None and len(df):
+            obj.htf_trend[-1] = htf_trend_last
+        return obj
 
 
 class BarView:
@@ -100,11 +134,11 @@ class BarView:
 
     def lowest_low(self, n: int) -> float:
         lo = max(0, self.t - n + 1)
-        return float(np.min(self._d.low[lo: self.t + 1]))
+        return float(np.min(self._d.low[lo : self.t + 1]))
 
     def highest_high(self, n: int) -> float:
         lo = max(0, self.t - n + 1)
-        return float(np.max(self._d.high[lo: self.t + 1]))
+        return float(np.max(self._d.high[lo : self.t + 1]))
 
     @property
     def regime(self) -> str:
@@ -117,7 +151,7 @@ class BarView:
     def structure_event(self, max_age: int) -> tuple[int, int, float] | None:
         """(event_code, bars_ago, broken_level) of the latest BOS/CHoCH within max_age bars."""
         lo = max(0, self.t - max_age)
-        ev = self._d.states.event[lo: self.t + 1]
+        ev = self._d.states.event[lo : self.t + 1]
         nz = np.nonzero(ev)[0]
         if not len(nz):
             return None
@@ -178,11 +212,27 @@ class Strategy(ABC):
     @abstractmethod
     def analyze(self, view: BarView) -> StrategyVote: ...
 
-    def _vote(self, direction: Direction, strength: float, stop: float | None, target: float | None,
-              reasons: list[str], entry_type: str = "MARKET", entry_price: float | None = None) -> StrategyVote:
-        return StrategyVote(strategy=self.name, version=self.version, direction=direction,
-                            strength=float(np.clip(strength, 0, 1)), stop=stop, target=target, reasons=reasons,
-                            entry_type=entry_type, entry_price=entry_price)
+    def _vote(
+        self,
+        direction: Direction,
+        strength: float,
+        stop: float | None,
+        target: float | None,
+        reasons: list[str],
+        entry_type: str = "MARKET",
+        entry_price: float | None = None,
+    ) -> StrategyVote:
+        return StrategyVote(
+            strategy=self.name,
+            version=self.version,
+            direction=direction,
+            strength=float(np.clip(strength, 0, 1)),
+            stop=stop,
+            target=target,
+            reasons=reasons,
+            entry_type=entry_type,
+            entry_price=entry_price,
+        )
 
     def _none(self, reason: str = "No setup") -> StrategyVote:
         return StrategyVote(strategy=self.name, version=self.version, reasons=[reason])
@@ -192,11 +242,20 @@ class Strategy(ABC):
         if not cls.grid:
             return [dict(cls.defaults)]
         keys = list(cls.grid)
-        return [{**cls.defaults, **dict(zip(keys, vals, strict=True))} for vals in itertools.product(*(cls.grid[k] for k in keys))]
+        return [
+            {**cls.defaults, **dict(zip(keys, vals, strict=True))}
+            for vals in itertools.product(*(cls.grid[k] for k in keys))
+        ]
 
     def describe(self) -> dict[str, Any]:
-        return {"name": self.name, "version": self.version, "description": self.description,
-                "regimes": list(self.regimes), "params": self.params, "grid": self.grid}
+        return {
+            "name": self.name,
+            "version": self.version,
+            "description": self.description,
+            "regimes": list(self.regimes),
+            "params": self.params,
+            "grid": self.grid,
+        }
 
 
 def finite(*vals: float) -> bool:

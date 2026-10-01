@@ -48,7 +48,9 @@ def macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> p
 
 def true_range(df: pd.DataFrame) -> pd.Series:
     prev_close = df["close"].shift(1)
-    tr = pd.concat([df["high"] - df["low"], (df["high"] - prev_close).abs(), (df["low"] - prev_close).abs()], axis=1)
+    tr = pd.concat(
+        [df["high"] - df["low"], (df["high"] - prev_close).abs(), (df["low"] - prev_close).abs()], axis=1
+    )
     return tr.max(axis=1, skipna=True)
 
 
@@ -76,7 +78,9 @@ def bollinger(close: pd.Series, n: int = 20, k: float = 2.0) -> pd.DataFrame:
     lower = mid - k * std
     width = (upper - lower) / mid
     pct_b = (close - lower) / (upper - lower).replace(0.0, np.nan)
-    return pd.DataFrame({"bb_mid": mid, "bb_upper": upper, "bb_lower": lower, "bb_width": width, "bb_pct_b": pct_b})
+    return pd.DataFrame(
+        {"bb_mid": mid, "bb_upper": upper, "bb_lower": lower, "bb_width": width, "bb_pct_b": pct_b}
+    )
 
 
 def vwap(df: pd.DataFrame, anchor: str = "D", rolling_bars: int | None = None) -> pd.Series:
@@ -114,7 +118,7 @@ def cci(df: pd.DataFrame, n: int = 20) -> pd.Series:
         mean = win.mean(axis=1)
         md = np.abs(win - mean[:, None]).mean(axis=1)
         with np.errstate(divide="ignore", invalid="ignore"):
-            out[n - 1:] = (tp[n - 1:] - mean) / (0.015 * md)
+            out[n - 1 :] = (tp[n - 1 :] - mean) / (0.015 * md)
     return pd.Series(out, index=df.index)
 
 
@@ -167,5 +171,5 @@ def linear_slope(x: pd.Series, n: int = 10) -> pd.Series:
         t = np.arange(n) - (n - 1) / 2.0
         denom = float(np.sum(t**2))
         win = sliding_window_view(arr, n)
-        out[n - 1:] = (win * t).sum(axis=1) / denom
+        out[n - 1 :] = (win * t).sum(axis=1) / denom
     return pd.Series(out, index=x.index)

@@ -54,7 +54,9 @@ def score_structure(ctx: SignalContext, d: int) -> tuple[float, list[str], list[
     s = 0.45 * d * code
     pros, cons = [], []
     if code == d:
-        pros.append(f"{ctx.timeframe} structure {st.trend.lower()} ({', '.join(st.recent_labels[-2:]) or 'swings'})")
+        pros.append(
+            f"{ctx.timeframe} structure {st.trend.lower()} ({', '.join(st.recent_labels[-2:]) or 'swings'})"
+        )
     elif code == -d:
         cons.append(f"{ctx.timeframe} structure {st.trend.lower()}")
     ev = st.last_event
@@ -72,7 +74,10 @@ def score_structure(ctx: SignalContext, d: int) -> tuple[float, list[str], list[
         br_dir = 1 if br.direction == "BULLISH" else -1
         if br_dir == d:
             s += 0.20 + (0.10 if br.retested else 0.0)
-            pros.append(f"{br.direction.capitalize()} breakout of {br.level:.{ctx.price_precision}f}" + (" with retest" if br.retested else ""))
+            pros.append(
+                f"{br.direction.capitalize()} breakout of {br.level:.{ctx.price_precision}f}"
+                + (" with retest" if br.retested else "")
+            )
         else:
             s -= 0.30
             cons.append(f"{br.direction.capitalize()} breakout of {br.level:.{ctx.price_precision}f}")
@@ -161,12 +166,19 @@ def score_liquidity(ctx: SignalContext, d: int) -> tuple[float, list[str], list[
         else:
             s += 0.2
             pros.append("No mapped opposing level nearby")
-        pools = [z for z in st.liquidity_zones if z.kind in (("EQUAL_HIGHS", "PRIOR_DAY_HIGH") if d > 0 else ("EQUAL_LOWS", "PRIOR_DAY_LOW"))]
+        pools = [
+            z
+            for z in st.liquidity_zones
+            if z.kind in (("EQUAL_HIGHS", "PRIOR_DAY_HIGH") if d > 0 else ("EQUAL_LOWS", "PRIOR_DAY_LOW"))
+        ]
         for z in pools:
             gap = (z.price - ctx.price) * d / atr
             if 0.5 <= gap <= 3.0:
                 s += 0.1
-                pros.append(f"{z.kind.replace('_', ' ').title()} at {z.price:.{prec}f} as a potential objective" + (" (heuristic)" if z.heuristic else ""))
+                pros.append(
+                    f"{z.kind.replace('_', ' ').title()} at {z.price:.{prec}f} as a potential objective"
+                    + (" (heuristic)" if z.heuristic else "")
+                )
                 break
     return _clip(s), pros, cons
 
@@ -198,7 +210,9 @@ def score_macro(ctx: SignalContext, d: int) -> tuple[float, list[str], list[str]
     ev = ctx.events
     if ev.available and ev.next_high_impact_minutes is not None and 0 <= ev.next_high_impact_minutes <= 120:
         s -= 0.5
-        cons.append(f"High-impact event in {int(ev.next_high_impact_minutes)} min: {ev.next_high_impact_event}")
+        cons.append(
+            f"High-impact event in {int(ev.next_high_impact_minutes)} min: {ev.next_high_impact_event}"
+        )
     return _clip(s), pros, cons
 
 
@@ -228,7 +242,9 @@ SCORERS = {
 }
 
 
-def score_direction(ctx: SignalContext, d: int, weights: ScoringWeights) -> tuple[float, list[ScoreComponent], float]:
+def score_direction(
+    ctx: SignalContext, d: int, weights: ScoringWeights
+) -> tuple[float, list[ScoreComponent], float]:
     """Return (total score, components, mtf adjustment) for direction d."""
     from market_data.models import Timeframe  # local import avoids a cycle at module import
 
@@ -237,8 +253,16 @@ def score_direction(ctx: SignalContext, d: int, weights: ScoringWeights) -> tupl
     for name, fn in SCORERS.items():
         raw, pros, cons = fn(ctx, d)
         pts = norm[name] * (raw + 1.0) / 2.0
-        comps.append(ScoreComponent(name=name, weight=round(norm[name], 3), points=round(pts, 3), raw=round(raw, 4),
-                                    notes_for=pros, notes_against=cons))
+        comps.append(
+            ScoreComponent(
+                name=name,
+                weight=round(norm[name], 3),
+                points=round(pts, 3),
+                raw=round(raw, 4),
+                notes_for=pros,
+                notes_against=cons,
+            )
+        )
     adj, _, _, _ = ctx.mtf.adjustment_for(d, Timeframe.parse(ctx.timeframe))
     total = float(np.clip(sum(c.points for c in comps) + adj, 0.0, 100.0))
     return round(total, 2), comps, adj

@@ -246,7 +246,14 @@ class DemoPriceModel:
         v = np.where(m2, data["volume"].reshape(nb, tf_min), 0.0).sum(axis=1)
         day_start = int((EPOCH + timedelta(days=k)).timestamp())
         t = day_start + rows * tf_min * 60
-        out = {"t": t[valid], "open": o[valid], "high": h[valid], "low": lo[valid], "close": c[valid], "volume": v[valid]}
+        out = {
+            "t": t[valid],
+            "open": o[valid],
+            "high": h[valid],
+            "low": lo[valid],
+            "close": c[valid],
+            "volume": v[valid],
+        }
         if upto_minute is None and tf_min == MINUTES_PER_DAY:
             self._daily_bins[k] = out  # tiny; kept for the process lifetime
         elif upto_minute is None:
@@ -255,8 +262,14 @@ class DemoPriceModel:
                 self._bin_cache.popitem(last=False)
         return out
 
-    def candles(self, timeframe: Timeframe, end: datetime, limit: int,
-                start: datetime | None = None, now: datetime | None = None) -> tuple[pd.DataFrame, bool]:
+    def candles(
+        self,
+        timeframe: Timeframe,
+        end: datetime,
+        limit: int,
+        start: datetime | None = None,
+        now: datetime | None = None,
+    ) -> tuple[pd.DataFrame, bool]:
         """Return (frame, last_bar_complete) for bars whose open time < end.
 
         If `now` falls inside the requested window, the in-progress bar is
@@ -271,7 +284,9 @@ class DemoPriceModel:
         else:
             per_bar_days = timeframe.seconds / 86_400
             factor = 1.0 if self.spec.session == SessionType.CRYPTO else 1.5
-            begin = max(end - timedelta(days=per_bar_days * (limit + 2) * factor + (3 if factor > 1 else 0)), EPOCH)
+            begin = max(
+                end - timedelta(days=per_bar_days * (limit + 2) * factor + (3 if factor > 1 else 0)), EPOCH
+            )
         if timeframe == Timeframe.W1:
             k_b = self.day_index(begin)
             begin = EPOCH + timedelta(days=k_b - k_b % 7)
@@ -289,14 +304,20 @@ class DemoPriceModel:
             parts.append(part)
         if not parts:
             return pd.DataFrame(columns=["open", "high", "low", "close", "volume"]), True
-        cols = {name: np.concatenate([p[name] for p in parts]) for name in ("t", "open", "high", "low", "close", "volume")}
+        cols = {
+            name: np.concatenate([p[name] for p in parts])
+            for name in ("t", "open", "high", "low", "close", "volume")
+        }
         t = cols.pop("t")
         sel = (t >= begin.timestamp()) & (t < end.timestamp())
-        df = pd.DataFrame({k: v[sel] for k, v in cols.items()}, index=pd.to_datetime(t[sel], unit="s", utc=True))
+        df = pd.DataFrame(
+            {k: v[sel] for k, v in cols.items()}, index=pd.to_datetime(t[sel], unit="s", utc=True)
+        )
         if timeframe == Timeframe.W1 and len(df):
             week_key = (df.index - pd.Timestamp(EPOCH)).days // 7
             weekly = df.groupby(week_key).agg(
-                {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+                {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
+            )
             weekly.index = pd.DatetimeIndex([EPOCH + timedelta(days=7 * int(w)) for w in weekly.index])
             df = weekly
         if start is None:
@@ -308,10 +329,11 @@ class DemoPriceModel:
             last_complete = last_open + span <= now
         return df, last_complete
 
-    def _merge_partial_minute(self, part: dict[str, np.ndarray], k: int, minute: int, tf_min: int,
-                              now: datetime) -> dict[str, np.ndarray]:
+    def _merge_partial_minute(
+        self, part: dict[str, np.ndarray], k: int, minute: int, tf_min: int, now: datetime
+    ) -> dict[str, np.ndarray]:
         """Fold the in-progress minute (open -> current demo price) into the bins."""
-        if not self._weekday_masks()[k % 7][minute] or now.second == 0 and now.microsecond == 0:
+        if not self._weekday_masks()[k % 7][minute] or (now.second == 0 and now.microsecond == 0):
             return part
         d = self.day_minutes(k)
         o = float(d["open"][minute])
@@ -326,6 +348,13 @@ class DemoPriceModel:
             part["close"][-1] = p
             part["volume"][-1] += vol
             return part
-        for name, val in (("t", bin_t), ("open", o), ("high", max(o, p)), ("low", min(o, p)), ("close", p), ("volume", vol)):
+        for name, val in (
+            ("t", bin_t),
+            ("open", o),
+            ("high", max(o, p)),
+            ("low", min(o, p)),
+            ("close", p),
+            ("volume", vol),
+        ):
             part[name] = np.append(part[name], val)
         return part

@@ -5,7 +5,12 @@ import pandas as pd
 import pytest
 
 from market_data.models import Timeframe
-from quant.features.feature_set import FEATURE_VERSION, compute_indicator_frame, similarity_vector, snapshot_at
+from quant.features.feature_set import (
+    FEATURE_VERSION,
+    compute_indicator_frame,
+    similarity_vector,
+    snapshot_at,
+)
 from quant.indicators import core as ind
 
 
@@ -70,11 +75,13 @@ def test_rsi_edge_cases():
 
 def test_atr_matches_reference():
     df = ohlcv()
-    tr = np.maximum.reduce([
-        (df["high"] - df["low"]).to_numpy(),
-        np.abs(df["high"] - df["close"].shift(1)).to_numpy(),
-        np.abs(df["low"] - df["close"].shift(1)).to_numpy(),
-    ])
+    tr = np.maximum.reduce(
+        [
+            (df["high"] - df["low"]).to_numpy(),
+            np.abs(df["high"] - df["close"].shift(1)).to_numpy(),
+            np.abs(df["low"] - df["close"].shift(1)).to_numpy(),
+        ]
+    )
     tr[0] = df["high"].iloc[0] - df["low"].iloc[0]
     ref = ref_wilder(tr, 14)
     got = ind.atr(df, 14).to_numpy()
@@ -122,7 +129,18 @@ def test_indicators_are_causal():
     df = ohlcv(n=400)
     full = compute_indicator_frame(df, Timeframe.M15)
     part = compute_indicator_frame(df.iloc[:300], Timeframe.M15)
-    cols = ["ema20", "rsi14", "atr14", "adx", "macd_hist", "bb_width", "vol_percentile", "trend_score", "momentum_score", "vwap"]
+    cols = [
+        "ema20",
+        "rsi14",
+        "atr14",
+        "adx",
+        "macd_hist",
+        "bb_width",
+        "vol_percentile",
+        "trend_score",
+        "momentum_score",
+        "vwap",
+    ]
     a = full[cols].iloc[:300].to_numpy()
     b = part[cols].to_numpy()
     assert np.allclose(a, b, equal_nan=True)

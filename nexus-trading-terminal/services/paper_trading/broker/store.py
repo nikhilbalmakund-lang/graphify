@@ -16,7 +16,9 @@ class PaperStore(Protocol):
 
     async def save_account(self, account: Account) -> None: ...
 
-    async def list_positions(self, account_id: str, status: PositionStatus | None = None) -> list[Position]: ...
+    async def list_positions(
+        self, account_id: str, status: PositionStatus | None = None
+    ) -> list[Position]: ...
 
     async def get_position(self, position_id: str) -> Position | None: ...
 
@@ -48,8 +50,11 @@ class InMemoryPaperStore:
         self.accounts[account.id] = account.model_copy(deep=True)
 
     async def list_positions(self, account_id: str, status: PositionStatus | None = None) -> list[Position]:
-        return [p.model_copy(deep=True) for p in self.positions.values()
-                if p.account_id == account_id and (status is None or p.status == status)]
+        return [
+            p.model_copy(deep=True)
+            for p in self.positions.values()
+            if p.account_id == account_id and (status is None or p.status == status)
+        ]
 
     async def get_position(self, position_id: str) -> Position | None:
         p = self.positions.get(position_id)
@@ -59,8 +64,11 @@ class InMemoryPaperStore:
         self.positions[position.id] = position.model_copy(deep=True)
 
     async def list_orders(self, account_id: str, status: OrderStatus | None = None) -> list[Order]:
-        return [o.model_copy(deep=True) for o in self.orders.values()
-                if o.account_id == account_id and (status is None or o.status == status)]
+        return [
+            o.model_copy(deep=True)
+            for o in self.orders.values()
+            if o.account_id == account_id and (status is None or o.status == status)
+        ]
 
     async def get_order(self, order_id: str) -> Order | None:
         o = self.orders.get(order_id)

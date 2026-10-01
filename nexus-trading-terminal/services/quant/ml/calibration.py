@@ -78,20 +78,29 @@ class CalibrationReport(BaseModel):
     test_period: tuple[str, str] | None = None
 
 
-def features_for(vector: list[float], direction: str, score: float, rr: float, regime: str, asset_class: str) -> list[float]:
-    row = list(vector) + [1.0 if direction == "LONG" else -1.0, score / 100.0, min(rr, 10.0) / 5.0]
+def features_for(
+    vector: list[float], direction: str, score: float, rr: float, regime: str, asset_class: str
+) -> list[float]:
+    row = [*vector, 1.0 if direction == "LONG" else -1.0, score / 100.0, min(rr, 10.0) / 5.0]
     row += [1.0 if regime == r.value else 0.0 for r in REGIME_CODES]
     row += [1.0 if asset_class == a else 0.0 for a in ASSET_CLASSES]
     return row
 
 
 def _xy(records: list[SetupRecord]) -> tuple[np.ndarray, np.ndarray]:
-    x = np.asarray([features_for(r.vector, r.direction, r.score, r.effective_rr, r.regime, r.asset_class) for r in records])
+    x = np.asarray(
+        [
+            features_for(r.vector, r.direction, r.score, r.effective_rr, r.regime, r.asset_class)
+            for r in records
+        ]
+    )
     y = np.asarray([1 if r.outcome.tp1_before_sl else 0 for r in records])
     return x, y
 
 
-def expected_calibration_error(p: np.ndarray, y: np.ndarray, bins: int = 10) -> tuple[float, list[ReliabilityBin]]:
+def expected_calibration_error(
+    p: np.ndarray, y: np.ndarray, bins: int = 10
+) -> tuple[float, list[ReliabilityBin]]:
     edges = np.linspace(0, 1, bins + 1)
     ece = 0.0
     out: list[ReliabilityBin] = []
@@ -102,10 +111,25 @@ def expected_calibration_error(p: np.ndarray, y: np.ndarray, bins: int = 10) -> 
         if cnt:
             mp, fy = float(p[mask].mean()), float(y[mask].mean())
             ece += cnt / len(p) * abs(mp - fy)
-            out.append(ReliabilityBin(lower=round(lo, 2), upper=round(hi, 2), mean_predicted=round(mp, 4),
-                                      observed_frequency=round(fy, 4), count=cnt))
+            out.append(
+                ReliabilityBin(
+                    lower=round(lo, 2),
+                    upper=round(hi, 2),
+                    mean_predicted=round(mp, 4),
+                    observed_frequency=round(fy, 4),
+                    count=cnt,
+                )
+            )
         else:
-            out.append(ReliabilityBin(lower=round(lo, 2), upper=round(hi, 2), mean_predicted=None, observed_frequency=None, count=0))
+            out.append(
+                ReliabilityBin(
+                    lower=round(lo, 2),
+                    upper=round(hi, 2),
+                    mean_predicted=None,
+                    observed_frequency=None,
+                    count=0,
+                )
+            )
     return round(float(ece), 4), out
 
 
@@ -122,12 +146,20 @@ class SetupProbabilityModel:
 
     def fit(self, records: list[SetupRecord], data_mode: str) -> CalibrationReport:
         now = datetime.now(UTC).isoformat()
-        usable = sorted([r for r in records if r.filled and r.outcome.tp1_before_sl is not None], key=lambda r: r.timestamp)
+        usable = sorted(
+            [r for r in records if r.filled and r.outcome.tp1_before_sl is not None],
+            key=lambda r: r.timestamp,
+        )
         n = len(usable)
         need = int((MIN_TRAIN + MIN_TEST) / 0.8)
         if n < need:
-            self.report = CalibrationReport(status="INSUFFICIENT_DATA", trained_at=now, data_mode=data_mode, n_total=n,
-                                            reasons=[f"Need at least {need} labelled setups, have {n}"])
+            self.report = CalibrationReport(
+                status="INSUFFICIENT_DATA",
+                trained_at=now,
+                data_mode=data_mode,
+                n_total=n,
+                reasons=[f"Need at least {need} labelled setups, have {n}"],
+            )
             self.model = None
             return self.report
         i_tr, i_cal = int(n * 0.6), int(n * 0.8)
@@ -137,13 +169,19 @@ class SetupProbabilityModel:
         xte, yte = _xy(te)
         reasons: list[str] = []
         if len(set(ytr)) < 2:
-            self.report = CalibrationReport(status="NOT_CALIBRATED", trained_at=now, data_mode=data_mode, n_total=n,
-                                            reasons=["Training labels contain a single class"])
+            self.report = CalibrationReport(
+                status="NOT_CALIBRATED",
+                trained_at=now,
+                data_mode=data_mode,
+                n_total=n,
+                reasons=["Training labels contain a single class"],
+            )
             return self.report
         scaler = StandardScaler().fit(xtr)
         model = LogisticRegression(max_iter=2000, C=0.5).fit(scaler.transform(xtr), ytr)
         iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0).fit(
-            model.predict_proba(scaler.transform(xcal))[:, 1], ycal)
+            model.predict_proba(scaler.transform(xcal))[:, 1], ycal
+        )
         p = iso.predict(model.predict_proba(scaler.transform(xte))[:, 1])
         base = float(ytr.mean())
         brier = float(np.mean((p - yte) ** 2))
@@ -155,11 +193,17 @@ class SetupProbabilityModel:
         challenger = None
         try:
             hgb = HistGradientBoostingClassifier(max_depth=3, max_iter=150, learning_rate=0.05).fit(xtr, ytr)
-            iso2 = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0).fit(hgb.predict_proba(xcal)[:, 1], ycal)
+            iso2 = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0).fit(
+                hgb.predict_proba(xcal)[:, 1], ycal
+            )
             p2 = iso2.predict(hgb.predict_proba(xte)[:, 1])
             ece2, _ = expected_calibration_error(p2, yte)
-            challenger = ModelScores(name="HistGradientBoosting + isotonic", brier=round(float(np.mean((p2 - yte) ** 2)), 4),
-                                     ece=ece2, auc=round(float(roc_auc_score(yte, p2)), 4) if len(set(yte)) > 1 else None)
+            challenger = ModelScores(
+                name="HistGradientBoosting + isotonic",
+                brier=round(float(np.mean((p2 - yte) ** 2)), 4),
+                ece=ece2,
+                auc=round(float(roc_auc_score(yte, p2)), 4) if len(set(yte)) > 1 else None,
+            )
         except ValueError as exc:
             reasons.append(f"Challenger not evaluated: {exc}")
 
@@ -171,18 +215,34 @@ class SetupProbabilityModel:
             reasons.append(f"Expected calibration error {ece:.3f} > {MAX_ECE}")
         if skill <= 0:
             reasons.append(f"No Brier skill over the base rate ({skill:+.3f})")
-        status = "CALIBRATED" if not [r for r in reasons if not r.startswith("Challenger")] else "NOT_CALIBRATED"
+        status = (
+            "CALIBRATED" if not [r for r in reasons if not r.startswith("Challenger")] else "NOT_CALIBRATED"
+        )
         self.scaler, self.model, self.iso = scaler, model, iso
         self.report = CalibrationReport(
-            status=status, trained_at=now, data_mode=data_mode, n_total=n, n_train=len(tr), n_calibration=len(cal),
-            n_test=len(te), base_rate=round(base, 4), brier=round(brier, 4), brier_baseline=round(brier0, 4),
-            brier_skill=round(skill, 4), ece=ece, auc=round(auc, 4) if auc is not None else None, reliability=rel,
-            challenger=challenger, reasons=reasons or ["Passed out-of-sample calibration checks"],
+            status=status,
+            trained_at=now,
+            data_mode=data_mode,
+            n_total=n,
+            n_train=len(tr),
+            n_calibration=len(cal),
+            n_test=len(te),
+            base_rate=round(base, 4),
+            brier=round(brier, 4),
+            brier_baseline=round(brier0, 4),
+            brier_skill=round(skill, 4),
+            ece=ece,
+            auc=round(auc, 4) if auc is not None else None,
+            reliability=rel,
+            challenger=challenger,
+            reasons=reasons or ["Passed out-of-sample calibration checks"],
             test_period=(te[0].timestamp, te[-1].timestamp),
         )
         return self.report
 
-    def predict(self, vector: list[float], direction: str, score: float, rr: float, regime: str, asset_class: str) -> float | None:
+    def predict(
+        self, vector: list[float], direction: str, score: float, rr: float, regime: str, asset_class: str
+    ) -> float | None:
         """Calibrated probability, or None when the model has not passed validation."""
         if not self.calibrated or self.model is None or self.scaler is None or self.iso is None:
             return None

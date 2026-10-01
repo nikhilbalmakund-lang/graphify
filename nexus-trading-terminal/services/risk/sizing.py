@@ -41,7 +41,9 @@ def notional_usd(spec: AssetSpec, lots: float, price: float) -> float:
     return lots * spec.contract_size * price
 
 
-def margin_required(spec: AssetSpec, lots: float, price: float, account_max_leverage: float | None = None) -> float:
+def margin_required(
+    spec: AssetSpec, lots: float, price: float, account_max_leverage: float | None = None
+) -> float:
     lev = min(spec.max_leverage, account_max_leverage) if account_max_leverage else spec.max_leverage
     return notional_usd(spec, lots, price) / lev
 
@@ -69,14 +71,31 @@ class SizeResult(BaseModel):
     notes: list[str] = []
 
 
-def compute_size(*, method: SizingMethod, equity: float, risk_pct: float, entry: float, stop: float,
-                 spec: AssetSpec, fixed_amount: float | None = None, atr_pct: float | None = None,
-                 atr_pct_reference: float | None = None, max_lots: float | None = None) -> SizeResult:
+def compute_size(
+    *,
+    method: SizingMethod,
+    equity: float,
+    risk_pct: float,
+    entry: float,
+    stop: float,
+    spec: AssetSpec,
+    fixed_amount: float | None = None,
+    atr_pct: float | None = None,
+    atr_pct_reference: float | None = None,
+    max_lots: float | None = None,
+) -> SizeResult:
     """Lots such that a stop-out loses the budgeted amount (never more)."""
     distance = abs(entry - stop)
     if distance <= 0 or equity <= 0:
-        return SizeResult(method=method, lots=0.0, raw_lots=0.0, risk_amount=0.0, risk_pct=0.0, risk_per_lot=0.0,
-                          notes=["Invalid stop distance or equity"])
+        return SizeResult(
+            method=method,
+            lots=0.0,
+            raw_lots=0.0,
+            risk_amount=0.0,
+            risk_pct=0.0,
+            risk_per_lot=0.0,
+            notes=["Invalid stop distance or equity"],
+        )
     risk_per_lot = distance * usd_per_point_per_lot(spec, stop)
     notes: list[str] = []
     vol_scale = 1.0
@@ -87,7 +106,9 @@ def compute_size(*, method: SizingMethod, equity: float, risk_pct: float, entry:
     elif method == SizingMethod.VOLATILITY_ADJUSTED:
         if atr_pct and atr_pct_reference and atr_pct > 0:
             vol_scale = max(0.5, min(1.0, atr_pct_reference / atr_pct))
-            notes.append(f"Volatility scale {vol_scale:.2f} (reference ATR% {atr_pct_reference:.3f} / current {atr_pct:.3f})")
+            notes.append(
+                f"Volatility scale {vol_scale:.2f} (reference ATR% {atr_pct_reference:.3f} / current {atr_pct:.3f})"
+            )
         else:
             notes.append("Volatility reference unavailable; using base risk")
         budget = equity * risk_pct * vol_scale
@@ -102,6 +123,13 @@ def compute_size(*, method: SizingMethod, equity: float, risk_pct: float, entry:
         notes.append(f"Computed size {raw:.4f} lots is below the minimum lot {spec.min_lot}")
         lots = 0.0
     actual = lots * risk_per_lot
-    return SizeResult(method=method, lots=lots, raw_lots=round(raw, 6), risk_amount=round(actual, 2),
-                      risk_pct=round(actual / equity, 6), risk_per_lot=round(risk_per_lot, 4), vol_scale=round(vol_scale, 3),
-                      notes=notes)
+    return SizeResult(
+        method=method,
+        lots=lots,
+        raw_lots=round(raw, 6),
+        risk_amount=round(actual, 2),
+        risk_pct=round(actual / equity, 6),
+        risk_per_lot=round(risk_per_lot, 4),
+        vol_scale=round(vol_scale, 3),
+        notes=notes,
+    )

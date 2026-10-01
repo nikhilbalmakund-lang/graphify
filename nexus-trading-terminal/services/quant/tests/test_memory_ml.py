@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 
 import numpy as np
 import pandas as pd
@@ -8,7 +9,15 @@ from market_data.assets import DEFAULT_CATALOG
 from market_data.models import Timeframe
 from market_data.providers.demo import DemoMarketDataProvider
 from quant.ml.calibration import SetupProbabilityModel, expected_calibration_error
-from quant.ml.memory import SetupOutcome, SetupRecord, build_setup_memory, evidence_from, find_similar, sample_label, summarize_conditions
+from quant.ml.memory import (
+    SetupOutcome,
+    SetupRecord,
+    build_setup_memory,
+    evidence_from,
+    find_similar,
+    sample_label,
+    summarize_conditions,
+)
 from quant.signals.outcome_sim import simulate_plan
 
 NOW = datetime(2026, 10, 1, 14, 30, 27, tzinfo=UTC)
@@ -23,7 +32,14 @@ TARGETS = [("TP1", 102.0, 0.5), ("TP2", 104.0, 0.3), ("TP3", 106.0, 0.2)]
 
 
 def test_outcome_partial_then_breakeven():
-    out = simulate_plan(fut([[100, 101, 99.5, 100.5], [100.5, 102.5, 100.2, 102], [102, 102.1, 99.5, 100]]), 1, "MARKET", 100, 99, TARGETS)
+    out = simulate_plan(
+        fut([[100, 101, 99.5, 100.5], [100.5, 102.5, 100.2, 102], [102, 102.1, 99.5, 100]]),
+        1,
+        "MARKET",
+        100,
+        99,
+        TARGETS,
+    )
     assert out.resolved and out.status == "WIN" and out.tp_hits == ["TP1"]
     assert out.r_multiple == pytest.approx(0.5 * 2.0)  # half off at 2R, rest stopped at breakeven
     assert out.tp1_before_sl is True and out.exit_reason == "BREAKEVEN_STOP"
@@ -36,13 +52,21 @@ def test_outcome_stop_first_when_same_bar():
 
 def test_outcome_all_targets_short_and_expiry_and_invalidation():
     rows = [[100, 100.2, 93, 94]]
-    out = simulate_plan(fut(rows), -1, "MARKET", 100, 101, [("TP1", 98, 0.5), ("TP2", 96, 0.3), ("TP3", 94, 0.2)])
+    out = simulate_plan(
+        fut(rows), -1, "MARKET", 100, 101, [("TP1", 98, 0.5), ("TP2", 96, 0.3), ("TP3", 94, 0.2)]
+    )
     assert out.status == "WIN" and out.r_multiple == pytest.approx(0.5 * 2 + 0.3 * 4 + 0.2 * 6)
-    exp = simulate_plan(fut([[105, 106, 104, 105]] * 8), 1, "ZONE", 100, 98, TARGETS, zone=(99.5, 100.5), expiry_bars=8)
+    exp = simulate_plan(
+        fut([[105, 106, 104, 105]] * 8), 1, "ZONE", 100, 98, TARGETS, zone=(99.5, 100.5), expiry_bars=8
+    )
     assert exp.status == "EXPIRED" and not exp.filled
-    inv = simulate_plan(fut([[101, 101, 97, 97.5]]), 1, "ZONE", 99, 97, TARGETS, invalidation_level=98, zone=(98.8, 99.2))
+    inv = simulate_plan(
+        fut([[101, 101, 97, 97.5]]), 1, "ZONE", 99, 97, TARGETS, invalidation_level=98, zone=(98.8, 99.2)
+    )
     assert inv.status == "INVALIDATED"
-    pending = simulate_plan(fut([[105, 106, 104, 105]] * 2), 1, "ZONE", 100, 98, TARGETS, zone=(99.5, 100.5), expiry_bars=8)
+    pending = simulate_plan(
+        fut([[105, 106, 104, 105]] * 2), 1, "ZONE", 100, 98, TARGETS, zone=(99.5, 100.5), expiry_bars=8
+    )
     assert pending.status == "PENDING" and not pending.resolved
 
 
@@ -50,7 +74,9 @@ def test_outcome_all_targets_short_and_expiry_and_invalidation():
 def records():
     p = DemoMarketDataProvider(clock=lambda: NOW)
     s = p.candles_sync("XAUUSD", Timeframe.H1, start=NOW - timedelta(days=200), end=NOW).closed_bars()
-    return build_setup_memory(s, Timeframe.H1, DEFAULT_CATALOG.get("XAUUSD"), provider="demo", is_demo=True, step=3)
+    return build_setup_memory(
+        s, Timeframe.H1, DEFAULT_CATALOG.get("XAUUSD"), provider="demo", is_demo=True, step=3
+    )
 
 
 def test_memory_is_deterministic_and_non_overlapping(records):
@@ -59,7 +85,7 @@ def test_memory_is_deterministic_and_non_overlapping(records):
     ts = [pd.Timestamp(r.timestamp) for r in records]
     assert ts == sorted(ts)
     filled = [r for r in records if r.filled]
-    for a, b in zip(filled[:-1], filled[1:], strict=True):
+    for a, b in pairwise(filled):
         exit_bar = pd.Timestamp(a.timestamp) + pd.Timedelta(hours=a.outcome.bars_held)
         assert pd.Timestamp(b.timestamp) >= exit_bar
 
@@ -86,10 +112,27 @@ def _synthetic(n, informative, seed=0):
         v = rng.standard_normal(10).round(4).tolist()
         p = 1 / (1 + np.exp(-2.5 * v[0])) if informative else 0.4
         win = bool(rng.random() < p)
-        recs.append(SetupRecord(symbol="X", timeframe="1H", timestamp=f"2025-01-01T00:00:00+00:00#{i:06d}", direction="LONG",
-                                score=60, regime="RANGING", asset_class="FOREX", vector=v, entry_type="MARKET", entry=1, stop=0.9,
-                                effective_rr=2, outcome=SetupOutcome(status="WIN" if win else "LOSS", r_multiple=1.0 if win else -1.0,
-                                                                     tp1_before_sl=win), is_demo=True, provider="test"))
+        recs.append(
+            SetupRecord(
+                symbol="X",
+                timeframe="1H",
+                timestamp=f"2025-01-01T00:00:00+00:00#{i:06d}",
+                direction="LONG",
+                score=60,
+                regime="RANGING",
+                asset_class="FOREX",
+                vector=v,
+                entry_type="MARKET",
+                entry=1,
+                stop=0.9,
+                effective_rr=2,
+                outcome=SetupOutcome(
+                    status="WIN" if win else "LOSS", r_multiple=1.0 if win else -1.0, tp1_before_sl=win
+                ),
+                is_demo=True,
+                provider="test",
+            )
+        )
     return recs
 
 

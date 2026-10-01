@@ -66,8 +66,18 @@ class Timeframe(StrEnum):
         """Accept canonical values plus common aliases (1h, 4h, 1d, 1w, 60m...)."""
         v = value.strip()
         aliases = {
-            "1h": "1H", "60m": "1H", "4h": "4H", "240m": "4H", "1d": "1D", "d": "1D",
-            "1w": "1W", "w": "1W", "1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m",
+            "1h": "1H",
+            "60m": "1H",
+            "4h": "4H",
+            "240m": "4H",
+            "1d": "1D",
+            "d": "1D",
+            "1w": "1W",
+            "w": "1W",
+            "1min": "1m",
+            "5min": "5m",
+            "15min": "15m",
+            "30min": "30m",
         }
         v = aliases.get(v.lower(), v) if v not in cls._value2member_map_ else v
         try:
@@ -118,7 +128,9 @@ class AssetSpec(BaseModel):
     session: SessionType
     base: str
     quote: str = "USD"
-    currencies: list[str] = Field(default_factory=list, description="Currencies whose macro events affect this asset")
+    currencies: list[str] = Field(
+        default_factory=list, description="Currencies whose macro events affect this asset"
+    )
     price_precision: int = 2
     tick_size: float = 0.01
     pip_size: float = 0.01

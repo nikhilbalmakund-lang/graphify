@@ -134,8 +134,14 @@ class RiskStatus(BaseModel):
     messages: list[str] = Field(default_factory=list)
 
 
-def correlated(sym_a: str, dir_a: int, sym_b: str, dir_b: int, corr: dict[tuple[str, str], float] | None = None,
-               threshold: float = 0.75) -> bool:
+def correlated(
+    sym_a: str,
+    dir_a: int,
+    sym_b: str,
+    dir_b: int,
+    corr: dict[tuple[str, str], float] | None = None,
+    threshold: float = 0.75,
+) -> bool:
     ea, eb = EXPOSURES.get(sym_a, {}), EXPOSURES.get(sym_b, {})
     for factor, va in ea.items():
         vb = eb.get(factor)
@@ -159,9 +165,21 @@ class RiskEngine:
         dd = max(0.0, (acct.peak_equity - acct.equity) / acct.peak_equity) if acct.peak_equity > 0 else 0.0
         daily = acct.equity - acct.day_start_equity
         weekly = acct.equity - acct.week_start_equity
-        d_used = max(0.0, -daily) / acct.day_start_equity / cfg.max_daily_loss if acct.day_start_equity > 0 else 0.0
-        w_used = max(0.0, -weekly) / acct.week_start_equity / cfg.max_weekly_loss if acct.week_start_equity > 0 else 0.0
-        gross = sum(notional_usd(specs[p.symbol], p.lots, p.current_price) for p in acct.open_positions if p.symbol in specs)
+        d_used = (
+            max(0.0, -daily) / acct.day_start_equity / cfg.max_daily_loss
+            if acct.day_start_equity > 0
+            else 0.0
+        )
+        w_used = (
+            max(0.0, -weekly) / acct.week_start_equity / cfg.max_weekly_loss
+            if acct.week_start_equity > 0
+            else 0.0
+        )
+        gross = sum(
+            notional_usd(specs[p.symbol], p.lots, p.current_price)
+            for p in acct.open_positions
+            if p.symbol in specs
+        )
         msgs: list[str] = []
         state = RiskState.NORMAL
         if acct.kill_switch:
@@ -180,59 +198,158 @@ class RiskEngine:
             state = RiskState.RESTRICTED
             msgs.append("Approaching a loss limit: trading restricted to reduced risk")
         return RiskStatus(
-            state=state, kill_switch=acct.kill_switch, equity=round(acct.equity, 2), drawdown=round(dd, 5),
-            daily_pnl=round(daily, 2), daily_loss_used=round(d_used, 4), weekly_pnl=round(weekly, 2),
-            weekly_loss_used=round(w_used, 4), open_positions=len(acct.open_positions),
-            open_risk_usd=round(sum(p.risk_usd for p in acct.open_positions), 2), gross_exposure=round(gross, 2),
-            leverage=round(gross / acct.equity, 3) if acct.equity > 0 else 0.0, limits=cfg, messages=msgs,
+            state=state,
+            kill_switch=acct.kill_switch,
+            equity=round(acct.equity, 2),
+            drawdown=round(dd, 5),
+            daily_pnl=round(daily, 2),
+            daily_loss_used=round(d_used, 4),
+            weekly_pnl=round(weekly, 2),
+            weekly_loss_used=round(w_used, 4),
+            open_positions=len(acct.open_positions),
+            open_risk_usd=round(sum(p.risk_usd for p in acct.open_positions), 2),
+            gross_exposure=round(gross, 2),
+            leverage=round(gross / acct.equity, 3) if acct.equity > 0 else 0.0,
+            limits=cfg,
+            messages=msgs,
         )
 
-    def evaluate(self, prop: TradeProposal, acct: AccountState, spec: AssetSpec,
-                 specs: dict[str, AssetSpec], corr: dict[tuple[str, str], float] | None = None) -> RiskDecision:
+    def evaluate(
+        self,
+        prop: TradeProposal,
+        acct: AccountState,
+        spec: AssetSpec,
+        specs: dict[str, AssetSpec],
+        corr: dict[tuple[str, str], float] | None = None,
+    ) -> RiskDecision:
         cfg = self.config
         st = self.status(acct, specs)
         checks: list[RiskCheck] = []
 
-        def add(name: str, ok: bool, detail: str, value: float | str | None = None, limit: float | str | None = None) -> None:
+        def add(
+            name: str,
+            ok: bool,
+            detail: str,
+            value: float | str | None = None,
+            limit: float | str | None = None,
+        ) -> None:
             checks.append(RiskCheck(name=name, passed=ok, detail=detail, value=value, limit=limit))
 
-        add("kill_switch", not acct.kill_switch, "Kill switch inactive" if not acct.kill_switch else "Kill switch ACTIVE")
-        add("max_drawdown", st.drawdown < cfg.max_drawdown, f"Drawdown {st.drawdown:.2%}", st.drawdown, cfg.max_drawdown)
-        add("max_daily_loss", st.daily_loss_used < 1, f"Daily loss limit used {st.daily_loss_used:.0%}", st.daily_loss_used, 1.0)
-        add("max_weekly_loss", st.weekly_loss_used < 1, f"Weekly loss limit used {st.weekly_loss_used:.0%}", st.weekly_loss_used, 1.0)
-        add("max_open_positions", len(acct.open_positions) < cfg.max_open_positions,
-            f"{len(acct.open_positions)} open positions", len(acct.open_positions), cfg.max_open_positions)
-        n_corr = sum(1 for p in acct.open_positions if correlated(prop.symbol, prop.direction, p.symbol, p.direction, corr, cfg.correlation_threshold))
-        add("max_correlated_exposure", n_corr < cfg.max_correlated_positions,
-            f"{n_corr} correlated open positions in the same direction", n_corr, cfg.max_correlated_positions)
+        add(
+            "kill_switch",
+            not acct.kill_switch,
+            "Kill switch inactive" if not acct.kill_switch else "Kill switch ACTIVE",
+        )
+        add(
+            "max_drawdown",
+            st.drawdown < cfg.max_drawdown,
+            f"Drawdown {st.drawdown:.2%}",
+            st.drawdown,
+            cfg.max_drawdown,
+        )
+        add(
+            "max_daily_loss",
+            st.daily_loss_used < 1,
+            f"Daily loss limit used {st.daily_loss_used:.0%}",
+            st.daily_loss_used,
+            1.0,
+        )
+        add(
+            "max_weekly_loss",
+            st.weekly_loss_used < 1,
+            f"Weekly loss limit used {st.weekly_loss_used:.0%}",
+            st.weekly_loss_used,
+            1.0,
+        )
+        add(
+            "max_open_positions",
+            len(acct.open_positions) < cfg.max_open_positions,
+            f"{len(acct.open_positions)} open positions",
+            len(acct.open_positions),
+            cfg.max_open_positions,
+        )
+        n_corr = sum(
+            1
+            for p in acct.open_positions
+            if correlated(prop.symbol, prop.direction, p.symbol, p.direction, corr, cfg.correlation_threshold)
+        )
+        add(
+            "max_correlated_exposure",
+            n_corr < cfg.max_correlated_positions,
+            f"{n_corr} correlated open positions in the same direction",
+            n_corr,
+            cfg.max_correlated_positions,
+        )
 
-        stop_ok = (prop.direction > 0 and prop.stop < prop.entry) or (prop.direction < 0 and prop.stop > prop.entry)
-        add("stop_valid", stop_ok, "Stop is on the losing side of entry" if stop_ok else "Stop is not on the losing side of entry")
+        stop_ok = (prop.direction > 0 and prop.stop < prop.entry) or (
+            prop.direction < 0 and prop.stop > prop.entry
+        )
+        add(
+            "stop_valid",
+            stop_ok,
+            "Stop is on the losing side of entry" if stop_ok else "Stop is not on the losing side of entry",
+        )
         if prop.effective_rr is not None:
-            add("min_risk_reward", prop.effective_rr >= cfg.min_rr, f"R:R {prop.effective_rr:.2f}", prop.effective_rr, cfg.min_rr)
+            add(
+                "min_risk_reward",
+                prop.effective_rr >= cfg.min_rr,
+                f"R:R {prop.effective_rr:.2f}",
+                prop.effective_rr,
+                cfg.min_rr,
+            )
         if prop.atr and prop.atr > 0:
             ratio = prop.spread / prop.atr
-            add("spread_filter", ratio <= cfg.max_spread_atr, f"Spread {ratio:.3f} ATR", round(ratio, 4), cfg.max_spread_atr)
-        add("slippage_filter", prop.expected_slippage_bps <= cfg.max_slippage_bps,
-            f"Expected slippage {prop.expected_slippage_bps:.1f} bps", prop.expected_slippage_bps, cfg.max_slippage_bps)
+            add(
+                "spread_filter",
+                ratio <= cfg.max_spread_atr,
+                f"Spread {ratio:.3f} ATR",
+                round(ratio, 4),
+                cfg.max_spread_atr,
+            )
+        add(
+            "slippage_filter",
+            prop.expected_slippage_bps <= cfg.max_slippage_bps,
+            f"Expected slippage {prop.expected_slippage_bps:.1f} bps",
+            prop.expected_slippage_bps,
+            cfg.max_slippage_bps,
+        )
         if cfg.news_filter:
-            add("news_filter", not prop.in_news_blackout, "No high-impact event blackout" if not prop.in_news_blackout else "Inside high-impact event blackout")
+            add(
+                "news_filter",
+                not prop.in_news_blackout,
+                "No high-impact event blackout"
+                if not prop.in_news_blackout
+                else "Inside high-impact event blackout",
+            )
         if cfg.session_filter:
             add("session_filter", prop.market_open, "Market open" if prop.market_open else "Market closed")
 
         risk_pct = cfg.max_risk_per_trade * (0.5 if st.state == RiskState.RESTRICTED else 1.0)
-        size = compute_size(method=cfg.sizing_method, equity=acct.equity, risk_pct=risk_pct, entry=prop.entry,
-                            stop=prop.stop, spec=spec, fixed_amount=cfg.fixed_risk_amount, atr_pct=prop.atr_pct,
-                            atr_pct_reference=prop.atr_pct_reference, max_lots=cfg.max_position_lots)
+        size = compute_size(
+            method=cfg.sizing_method,
+            equity=acct.equity,
+            risk_pct=risk_pct,
+            entry=prop.entry,
+            stop=prop.stop,
+            spec=spec,
+            fixed_amount=cfg.fixed_risk_amount,
+            atr_pct=prop.atr_pct,
+            atr_pct_reference=prop.atr_pct_reference,
+            max_lots=cfg.max_position_lots,
+        )
         lots = size.lots
         notes = list(size.notes)
         if st.state == RiskState.RESTRICTED:
             notes.append("Risk halved: account is in RESTRICTED state")
         if prop.requested_lots is not None:
             if prop.requested_lots > lots + 1e-12:
-                add("max_risk_per_trade", False,
+                add(
+                    "max_risk_per_trade",
+                    False,
                     f"Requested {prop.requested_lots} lots exceeds the risk-based maximum of {lots} lots",
-                    prop.requested_lots, lots)
+                    prop.requested_lots,
+                    lots,
+                )
             lots = min(lots, prop.requested_lots)
 
         current_gross = st.gross_exposure
@@ -243,32 +360,62 @@ class RiskEngine:
             per_lot = notional_usd(spec, 1.0, prop.entry)
             reduced = int(room / per_lot / spec.lot_step) * spec.lot_step if per_lot > 0 else 0.0
             if reduced >= spec.min_lot:
-                notes.append(f"Reduced from {lots} to {round(reduced, 8)} lots to respect max leverage {cfg.max_leverage}x")
+                notes.append(
+                    f"Reduced from {lots} to {round(reduced, 8)} lots to respect max leverage {cfg.max_leverage}x"
+                )
                 lots = round(reduced, 8)
             else:
                 lots = 0.0
-                add("max_leverage", False, f"No leverage headroom (gross {current_gross:,.0f} / max {max_gross:,.0f})",
-                    round(current_gross / acct.equity, 3), cfg.max_leverage)
-        add("position_size", lots >= spec.min_lot, f"Size {lots} lots" if lots >= spec.min_lot else "Size below the minimum lot",
-            lots, spec.min_lot)
+                add(
+                    "max_leverage",
+                    False,
+                    f"No leverage headroom (gross {current_gross:,.0f} / max {max_gross:,.0f})",
+                    round(current_gross / acct.equity, 3),
+                    cfg.max_leverage,
+                )
+        add(
+            "position_size",
+            lots >= spec.min_lot,
+            f"Size {lots} lots" if lots >= spec.min_lot else "Size below the minimum lot",
+            lots,
+            spec.min_lot,
+        )
 
         risk_amount = lots * size.risk_per_lot
         notional = notional_usd(spec, lots, prop.entry)
         lev_after = (current_gross + notional) / acct.equity if acct.equity > 0 else 0.0
-        add("max_risk_per_trade", risk_amount <= acct.equity * cfg.max_risk_per_trade * 1.0001,
+        add(
+            "max_risk_per_trade",
+            risk_amount <= acct.equity * cfg.max_risk_per_trade * 1.0001,
             f"Risk {risk_amount:,.2f} USD ({risk_amount / acct.equity:.2%})" if acct.equity else "No equity",
-            round(risk_amount / acct.equity, 6) if acct.equity else None, cfg.max_risk_per_trade)
+            round(risk_amount / acct.equity, 6) if acct.equity else None,
+            cfg.max_risk_per_trade,
+        )
         if lots > 0:
-            add("max_leverage", lev_after <= cfg.max_leverage + 1e-9, f"Leverage after trade {lev_after:.2f}x", round(lev_after, 3), cfg.max_leverage)
+            add(
+                "max_leverage",
+                lev_after <= cfg.max_leverage + 1e-9,
+                f"Leverage after trade {lev_after:.2f}x",
+                round(lev_after, 3),
+                cfg.max_leverage,
+            )
 
         failed = [c for c in checks if not c.passed]
         reasons = [f"{c.name}: {c.detail}" for c in failed]
         approved = not failed and lots > 0
         return RiskDecision(
-            approved=approved, state=st.state, checks=checks, lots=lots if approved else 0.0,
+            approved=approved,
+            state=st.state,
+            checks=checks,
+            lots=lots if approved else 0.0,
             risk_amount=round(risk_amount, 2) if approved else 0.0,
             risk_pct=round(risk_amount / acct.equity, 6) if approved and acct.equity else 0.0,
             notional=round(notional, 2) if approved else 0.0,
-            margin_required=round(margin_required(spec, lots, prop.entry, cfg.max_leverage), 2) if approved else 0.0,
-            leverage_after=round(lev_after, 3), sizing_method=cfg.sizing_method, sizing_notes=notes, reasons=reasons,
+            margin_required=round(margin_required(spec, lots, prop.entry, cfg.max_leverage), 2)
+            if approved
+            else 0.0,
+            leverage_after=round(lev_after, 3),
+            sizing_method=cfg.sizing_method,
+            sizing_notes=notes,
+            reasons=reasons,
         )

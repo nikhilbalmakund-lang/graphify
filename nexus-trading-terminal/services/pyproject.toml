@@ -50,6 +50,7 @@ ignore = [
 known-first-party = ["app", "market_data", "quant", "risk", "ai", "backtesting", "paper_trading"]
 
 [tool.mypy]
+plugins = ["pydantic.mypy"]
 python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_ignores = false

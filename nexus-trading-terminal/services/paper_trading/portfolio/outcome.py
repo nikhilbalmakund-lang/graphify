@@ -35,6 +35,16 @@ def compute_outcome(pos: Position) -> TradeOutcome:
             mae = round(max(0.0, -pos.direction * (pos.worst_price - pos.entry_price)) / unit, 3)
     eps = max(0.01, abs(pos.realized_pnl) * 1e-6)
     result = "WIN" if pos.realized_pnl > eps else "LOSS" if pos.realized_pnl < -eps else "BREAKEVEN"
-    return TradeOutcome(position_id=pos.id, symbol=pos.symbol, direction=pos.direction, pnl=pos.realized_pnl,
-                        fees=pos.fees, r_multiple=r, duration_seconds=duration, mfe_r=mfe, mae_r=mae,
-                        exit_reason=pos.exit_reason, result=result)
+    return TradeOutcome(
+        position_id=pos.id,
+        symbol=pos.symbol,
+        direction=pos.direction,
+        pnl=pos.realized_pnl,
+        fees=pos.fees,
+        r_multiple=r,
+        duration_seconds=duration,
+        mfe_r=mfe,
+        mae_r=mae,
+        exit_reason=pos.exit_reason,
+        result=result,
+    )

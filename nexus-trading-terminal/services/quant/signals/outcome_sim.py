@@ -30,10 +30,19 @@ class PlanOutcome(BaseModel):
     resolved: bool = False
 
 
-def simulate_plan(future: pd.DataFrame, direction: int, entry_type: str, entry: float, stop: float,
-                  targets: list[tuple[str, float, float]], invalidation_level: float | None = None,
-                  zone: tuple[float, float] | None = None, expiry_bars: int = 8, max_hold_bars: int = 96,
-                  spread: float = 0.0) -> PlanOutcome:
+def simulate_plan(
+    future: pd.DataFrame,
+    direction: int,
+    entry_type: str,
+    entry: float,
+    stop: float,
+    targets: list[tuple[str, float, float]],
+    invalidation_level: float | None = None,
+    zone: tuple[float, float] | None = None,
+    expiry_bars: int = 8,
+    max_hold_bars: int = 96,
+    spread: float = 0.0,
+) -> PlanOutcome:
     """`future` holds only bars strictly after the signal bar. targets: [(label, price, allocation)]."""
     d = direction
     half = spread / 2.0
@@ -43,15 +52,17 @@ def simulate_plan(future: pd.DataFrame, direction: int, entry_type: str, entry: 
     c = future["close"].to_numpy(dtype="float64")
     idx = future.index
     n = len(future)
-    fill_i = None
-    fill_px = None
+    fill_i: int | None = None
+    fill_px: float | None = None
     for i in range(min(n, expiry_bars)):
         if entry_type == "MARKET":
             fill_i, fill_px = i, o[i] + d * half
             break
         lo_z, hi_z = zone if zone else (entry, entry)
         # Invalidation before fill cancels the setup.
-        if invalidation_level is not None and ((d > 0 and c[i] < invalidation_level) or (d < 0 and c[i] > invalidation_level)):
+        if invalidation_level is not None and (
+            (d > 0 and c[i] < invalidation_level) or (d < 0 and c[i] > invalidation_level)
+        ):
             return PlanOutcome(status="INVALIDATED", filled=False, resolved=True, exit_time=str(idx[i]))
         ask_lo, bid_hi = lo[i] + half, h[i] - half
         if d > 0 and ask_lo <= hi_z:
@@ -60,14 +71,25 @@ def simulate_plan(future: pd.DataFrame, direction: int, entry_type: str, entry: 
         if d < 0 and bid_hi >= lo_z:
             fill_i, fill_px = i, max(o[i] - half, lo_z)
             break
-    if fill_i is None:
+    if fill_i is None or fill_px is None:
         if n >= expiry_bars:
-            return PlanOutcome(status="EXPIRED", filled=False, resolved=True, exit_time=str(idx[expiry_bars - 1]))
+            return PlanOutcome(
+                status="EXPIRED", filled=False, resolved=True, exit_time=str(idx[expiry_bars - 1])
+            )
         return PlanOutcome(status="PENDING", filled=False)
     if (d > 0 and fill_px <= stop) or (d < 0 and fill_px >= stop):
-        return PlanOutcome(status="LOSS", filled=True, fill_index=fill_i, fill_time=str(idx[fill_i]), fill_price=fill_px,
-                           exit_time=str(idx[fill_i]), exit_reason="GAP_THROUGH_STOP", r_multiple=-1.0, resolved=True,
-                           tp1_before_sl=False)
+        return PlanOutcome(
+            status="LOSS",
+            filled=True,
+            fill_index=fill_i,
+            fill_time=str(idx[fill_i]),
+            fill_price=fill_px,
+            exit_time=str(idx[fill_i]),
+            exit_reason="GAP_THROUGH_STOP",
+            r_multiple=-1.0,
+            resolved=True,
+            tp1_before_sl=False,
+        )
     unit = abs(fill_px - stop)
     remaining = 1.0
     realized_r = 0.0
@@ -85,7 +107,11 @@ def simulate_plan(future: pd.DataFrame, direction: int, entry_type: str, entry: 
         first_tp = pending[0][1] if pending else None
         gap_tp = first_tp is not None and ((d > 0 and o[i] >= first_tp) or (d < 0 and o[i] <= first_tp))
         if stop_hit and not gap_tp:
-            px = o[i] - d * half if ((d > 0 and o[i] - half <= cur_stop) or (d < 0 and o[i] + half >= cur_stop)) else cur_stop
+            px = (
+                o[i] - d * half
+                if ((d > 0 and o[i] - half <= cur_stop) or (d < 0 and o[i] + half >= cur_stop))
+                else cur_stop
+            )
             realized_r += remaining * d * (px - fill_px) / unit
             if tp1_first is None:
                 tp1_first = False
@@ -104,21 +130,56 @@ def simulate_plan(future: pd.DataFrame, direction: int, entry_type: str, entry: 
                     tp1_first = True
                 cur_stop = fill_px  # breakeven after the first target
                 if remaining <= 1e-9:
-                    return _final(realized_r, True, fill_i, fill_px, idx, i, "TARGETS", best, worst, hits, tp1_first)
+                    return _final(
+                        realized_r, True, fill_i, fill_px, idx, i, "TARGETS", best, worst, hits, tp1_first
+                    )
             else:
                 break
         if i - fill_i + 1 >= max_hold_bars:
             realized_r += remaining * d * (c[i] - d * half - fill_px) / unit
             return _final(realized_r, True, fill_i, fill_px, idx, i, "TIME", best, worst, hits, tp1_first)
-    return PlanOutcome(status="ACTIVE", filled=True, fill_index=fill_i, fill_time=str(idx[fill_i]), fill_price=fill_px,
-                       mfe_r=round(best, 3), mae_r=round(worst, 3), tp_hits=hits, tp1_before_sl=tp1_first,
-                       bars_held=n - fill_i)
+    return PlanOutcome(
+        status="ACTIVE",
+        filled=True,
+        fill_index=fill_i,
+        fill_time=str(idx[fill_i]),
+        fill_price=fill_px,
+        mfe_r=round(best, 3),
+        mae_r=round(worst, 3),
+        tp_hits=hits,
+        tp1_before_sl=tp1_first,
+        bars_held=n - fill_i,
+    )
 
 
-def _final(r: float, filled: bool, fill_i: int, fill_px: float, idx: pd.Index, i: int, reason: str, best: float,
-           worst: float, hits: list[str], tp1_first: bool | None) -> PlanOutcome:
+def _final(
+    r: float,
+    filled: bool,
+    fill_i: int,
+    fill_px: float,
+    idx: pd.Index,
+    i: int,
+    reason: str,
+    best: float,
+    worst: float,
+    hits: list[str],
+    tp1_first: bool | None,
+) -> PlanOutcome:
     r = float(np.round(r, 4))
     status = "WIN" if r > 0.05 else "LOSS" if r < -0.05 else "BREAKEVEN"
-    return PlanOutcome(status=status, filled=filled, fill_index=fill_i, fill_time=str(idx[fill_i]), fill_price=fill_px,
-                       exit_time=str(idx[i]), exit_reason=reason, r_multiple=r, bars_held=i - fill_i + 1,
-                       mfe_r=round(best, 3), mae_r=round(worst, 3), tp_hits=hits, tp1_before_sl=tp1_first, resolved=True)
+    return PlanOutcome(
+        status=status,
+        filled=filled,
+        fill_index=fill_i,
+        fill_time=str(idx[fill_i]),
+        fill_price=fill_px,
+        exit_time=str(idx[i]),
+        exit_reason=reason,
+        r_multiple=r,
+        bars_held=i - fill_i + 1,
+        mfe_r=round(best, 3),
+        mae_r=round(worst, 3),
+        tp_hits=hits,
+        tp1_before_sl=tp1_first,
+        resolved=True,
+    )

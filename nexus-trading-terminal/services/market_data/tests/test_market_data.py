@@ -100,7 +100,7 @@ def _series(df, tf=Timeframe.H1, symbol="BTCUSD"):
 
 def test_validation_clean_demo_series_is_usable():
     s = demo().candles_sync("XAUUSD", Timeframe.M15, 300)
-    clean, report = validate_series(s, DEFAULT_CATALOG.get("XAUUSD"), NOW)
+    _, report = validate_series(s, DEFAULT_CATALOG.get("XAUUSD"), NOW)
     assert report.usable
     assert not report.is_stale
     assert report.missing_bars == 0
@@ -141,15 +141,25 @@ def test_validation_detects_stale_and_missing():
 
 
 def test_validation_empty_series():
-    empty = pd.DataFrame(columns=["open", "high", "low", "close", "volume"], index=pd.DatetimeIndex([], tz="UTC"))
+    empty = pd.DataFrame(
+        columns=["open", "high", "low", "close", "volume"], index=pd.DatetimeIndex([], tz="UTC")
+    )
     _, report = validate_series(_series(empty), DEFAULT_CATALOG.get("BTCUSD"), NOW)
     assert not report.usable
 
 
 def test_validate_ohlcv_frame_for_imports():
     idx = pd.date_range("2024-01-01", periods=3, freq="1h", tz="UTC")
-    ok = pd.DataFrame({"open": [1.0, 2.0, 3.0], "high": [2.0, 3.0, 4.0], "low": [0.5, 1.5, 2.5],
-                       "close": [1.5, 2.5, 3.5], "volume": [1.0, 1.0, 1.0]}, index=idx)
+    ok = pd.DataFrame(
+        {
+            "open": [1.0, 2.0, 3.0],
+            "high": [2.0, 3.0, 4.0],
+            "low": [0.5, 1.5, 2.5],
+            "close": [1.5, 2.5, 3.5],
+            "volume": [1.0, 1.0, 1.0],
+        },
+        index=idx,
+    )
     assert validate_ohlcv_frame(ok) == []
     bad = ok.copy()
     bad.loc[idx[1], "high"] = 0.1
@@ -166,9 +176,26 @@ async def test_twelvedata_parses_quotes_and_candles():
     def handler(request: httpx.Request):
         assert request.url.params["apikey"] == "k"
         if request.url.path == "/quote":
-            return httpx.Response(200, json={"symbol": "EUR/USD", "close": "1.10000", "previous_close": "1.09000",
-                                             "timestamp": 1790000000, "is_market_open": True})
-        values = [{"datetime": f"2026-10-01 {h:02d}:00:00", "open": "1.1", "high": "1.2", "low": "1.0", "close": "1.15"} for h in range(5)]
+            return httpx.Response(
+                200,
+                json={
+                    "symbol": "EUR/USD",
+                    "close": "1.10000",
+                    "previous_close": "1.09000",
+                    "timestamp": 1790000000,
+                    "is_market_open": True,
+                },
+            )
+        values = [
+            {
+                "datetime": f"2026-10-01 {h:02d}:00:00",
+                "open": "1.1",
+                "high": "1.2",
+                "low": "1.0",
+                "close": "1.15",
+            }
+            for h in range(5)
+        ]
         return httpx.Response(200, json={"status": "ok", "values": values})
 
     p = TwelveDataProvider("k", client=_td_transport(handler), clock=lambda: NOW)

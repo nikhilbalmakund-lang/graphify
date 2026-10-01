@@ -39,11 +39,18 @@ class EnsembleResult(BaseModel):
     summary: str = ""
 
     def as_context(self) -> dict:
-        return {"net_direction": self.net_direction.value, "agreement": self.agreement, "conflict": self.conflict,
-                "supporting": self.supporting, "opposing": self.opposing}
+        return {
+            "net_direction": self.net_direction.value,
+            "agreement": self.agreement,
+            "conflict": self.conflict,
+            "supporting": self.supporting,
+            "opposing": self.opposing,
+        }
 
 
-def combine_votes(votes: list[StrategyVote], regime: str, perf: dict[tuple[str, str], StrategyPerf] | None = None) -> EnsembleResult:
+def combine_votes(
+    votes: list[StrategyVote], regime: str, perf: dict[tuple[str, str], StrategyPerf] | None = None
+) -> EnsembleResult:
     lw = sw = 0.0
     longs, shorts = [], []
     for vt in votes:
@@ -61,8 +68,15 @@ def combine_votes(votes: list[StrategyVote], regime: str, perf: dict[tuple[str, 
             shorts.append(vt.strategy)
     total = lw + sw
     if total <= 0:
-        return EnsembleResult(votes=votes, net_direction=Direction.NO_TRADE, agreement=0.0, conflict=False,
-                              long_weight=0.0, short_weight=0.0, summary="No strategy triggered")
+        return EnsembleResult(
+            votes=votes,
+            net_direction=Direction.NO_TRADE,
+            agreement=0.0,
+            conflict=False,
+            long_weight=0.0,
+            short_weight=0.0,
+            summary="No strategy triggered",
+        )
     agreement = max(lw, sw) / total
     conflict = bool(longs and shorts)
     majority = Direction.LONG if lw >= sw else Direction.SHORT
@@ -74,11 +88,20 @@ def combine_votes(votes: list[StrategyVote], regime: str, perf: dict[tuple[str, 
         summary = f"{majority.value} by {', '.join(longs if majority == Direction.LONG else shorts)} (agreement {agreement:.0%})"
     supporting = longs if majority == Direction.LONG else shorts
     opposing = shorts if majority == Direction.LONG else longs
-    return EnsembleResult(votes=votes, net_direction=net, agreement=round(agreement, 3), conflict=conflict,
-                          long_weight=round(lw, 3), short_weight=round(sw, 3), supporting=supporting,
-                          opposing=opposing, summary=summary)
+    return EnsembleResult(
+        votes=votes,
+        net_direction=net,
+        agreement=round(agreement, 3),
+        conflict=conflict,
+        long_weight=round(lw, 3),
+        short_weight=round(sw, 3),
+        supporting=supporting,
+        opposing=opposing,
+        summary=summary,
+    )
 
 
-def run_ensemble(strategies: list[Strategy], view: BarView,
-                 perf: dict[tuple[str, str], StrategyPerf] | None = None) -> EnsembleResult:
+def run_ensemble(
+    strategies: list[Strategy], view: BarView, perf: dict[tuple[str, str], StrategyPerf] | None = None
+) -> EnsembleResult:
     return combine_votes([s.vote(view) for s in strategies], view.regime, perf)

@@ -69,8 +69,14 @@ class DemoMarketDataProvider(MarketDataProvider):
     async def get_quote(self, symbol: str) -> Quote:
         return self.quote_sync(symbol)
 
-    def candles_sync(self, symbol: str, timeframe: Timeframe, limit: int = 500,
-                     end: datetime | None = None, start: datetime | None = None) -> CandleSeries:
+    def candles_sync(
+        self,
+        symbol: str,
+        timeframe: Timeframe,
+        limit: int = 500,
+        end: datetime | None = None,
+        start: datetime | None = None,
+    ) -> CandleSeries:
         spec = self._spec(symbol)
         now = self.now()
         end = min(end or now, now)
@@ -79,17 +85,32 @@ class DemoMarketDataProvider(MarketDataProvider):
         if start is not None:
             est_bars = (end - start).total_seconds() / timeframe.seconds
             if est_bars > MAX_DEMO_BARS:
-                raise MarketDataError("INSUFFICIENT_DATA", f"Requested range is too large ({int(est_bars)} bars); narrow the date range")
+                raise MarketDataError(
+                    "INSUFFICIENT_DATA",
+                    f"Requested range is too large ({int(est_bars)} bars); narrow the date range",
+                )
         df, complete = self.model(spec.symbol).candles(timeframe, end, limit, start=start, now=now)
         for col in ("open", "high", "low", "close"):
             df[col] = df[col].round(spec.price_precision + 2)
         return CandleSeries(
-            symbol=spec.symbol, timeframe=timeframe, provider=self.name, is_demo=True, df=df,
-            fetched_at=now, last_bar_complete=complete, volume_available=True,
+            symbol=spec.symbol,
+            timeframe=timeframe,
+            provider=self.name,
+            is_demo=True,
+            df=df,
+            fetched_at=now,
+            last_bar_complete=complete,
+            volume_available=True,
         )
 
-    async def get_candles(self, symbol: str, timeframe: Timeframe, limit: int = 500,
-                          end: datetime | None = None, start: datetime | None = None) -> CandleSeries:
+    async def get_candles(
+        self,
+        symbol: str,
+        timeframe: Timeframe,
+        limit: int = 500,
+        end: datetime | None = None,
+        start: datetime | None = None,
+    ) -> CandleSeries:
         heavy = start is not None or timeframe in (Timeframe.W1, Timeframe.D1) or limit > 2000
         if heavy:
             return await asyncio.to_thread(self.candles_sync, symbol, timeframe, limit, end, start)
@@ -102,11 +123,17 @@ class DemoMarketDataProvider(MarketDataProvider):
         spec = self._spec(symbol)
         now = self.now()
         open_, reason = is_open(spec.session, now)
-        return MarketStatus(symbol=spec.symbol, is_open=open_, session=spec.session, reason=reason, checked_at=now)
+        return MarketStatus(
+            symbol=spec.symbol, is_open=open_, session=spec.session, reason=reason, checked_at=now
+        )
 
     async def validate(self) -> ProviderHealth:
-        return ProviderHealth(provider=self.name, status="DEMO", is_demo=True,
-                              detail="Deterministic synthetic data (DEMO MODE). Not real market prices.")
+        return ProviderHealth(
+            provider=self.name,
+            status="DEMO",
+            is_demo=True,
+            detail="Deterministic synthetic data (DEMO MODE). Not real market prices.",
+        )
 
     def history_start(self) -> datetime:
         return EPOCH

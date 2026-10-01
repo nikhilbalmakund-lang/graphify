@@ -68,10 +68,16 @@ class AlpacaBroker(_FutureLiveBroker):
     label = "Alpaca"
 
 
-LIVE_BROKERS: dict[str, type[_FutureLiveBroker]] = {"mt5": MT5Broker, "ibkr": InteractiveBrokersBroker, "alpaca": AlpacaBroker}
+LIVE_BROKERS: dict[str, type[_FutureLiveBroker]] = {
+    "mt5": MT5Broker,
+    "ibkr": InteractiveBrokersBroker,
+    "alpaca": AlpacaBroker,
+}
 
 
-def live_trading_gate(env_enabled: bool, ui_switch_on: bool, broker_name: str | None) -> tuple[bool, list[str]]:
+def live_trading_gate(
+    env_enabled: bool, ui_switch_on: bool, broker_name: str | None
+) -> tuple[bool, list[str]]:
     """Return (allowed, reasons). All conditions must hold; default is DISABLED."""
     reasons: list[str] = []
     if not env_enabled:

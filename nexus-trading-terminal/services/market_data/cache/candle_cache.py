@@ -51,13 +51,24 @@ class CandleCache:
             self._locks[key] = lock
         return lock
 
-    async def get(self, provider: str, symbol: str, timeframe: Timeframe, limit: int,
-                  fetch: Callable[[int], Awaitable[CandleSeries]], incremental: bool = True) -> CandleSeries:
+    async def get(
+        self,
+        provider: str,
+        symbol: str,
+        timeframe: Timeframe,
+        limit: int,
+        fetch: Callable[[int], Awaitable[CandleSeries]],
+        incremental: bool = True,
+    ) -> CandleSeries:
         key = (provider, symbol, timeframe)
         async with self._lock(key):
             entry = self._entries.get(key)
             now_mono = time.monotonic()
-            if entry and now_mono - entry.fetched_mono < self._ttl[timeframe] and len(entry.series.df) >= limit:
+            if (
+                entry
+                and now_mono - entry.fetched_mono < self._ttl[timeframe]
+                and len(entry.series.df) >= limit
+            ):
                 self.hits += 1
                 return _tail(entry.series, limit)
             self.misses += 1
@@ -67,11 +78,19 @@ class CandleCache:
                 if n_new < limit:
                     fresh = await fetch(n_new)
                     merged = pd.concat([entry.series.df, fresh.df])
-                    merged = merged[~merged.index.duplicated(keep="last")].sort_index().iloc[-MAX_CACHED_BARS:]
-                    series = CandleSeries(symbol=fresh.symbol, timeframe=fresh.timeframe, provider=fresh.provider,
-                                          is_demo=fresh.is_demo, df=merged, fetched_at=fresh.fetched_at,
-                                          last_bar_complete=fresh.last_bar_complete,
-                                          volume_available=fresh.volume_available)
+                    merged = (
+                        merged[~merged.index.duplicated(keep="last")].sort_index().iloc[-MAX_CACHED_BARS:]
+                    )
+                    series = CandleSeries(
+                        symbol=fresh.symbol,
+                        timeframe=fresh.timeframe,
+                        provider=fresh.provider,
+                        is_demo=fresh.is_demo,
+                        df=merged,
+                        fetched_at=fresh.fetched_at,
+                        last_bar_complete=fresh.last_bar_complete,
+                        volume_available=fresh.volume_available,
+                    )
                     self._entries[key] = _Entry(series, now_mono, time.time())
                     return _tail(series, limit)
             series = await fetch(limit)
@@ -92,6 +111,13 @@ class CandleCache:
 def _tail(series: CandleSeries, limit: int) -> CandleSeries:
     if len(series.df) <= limit:
         return series
-    return CandleSeries(symbol=series.symbol, timeframe=series.timeframe, provider=series.provider,
-                        is_demo=series.is_demo, df=series.df.iloc[-limit:], fetched_at=series.fetched_at,
-                        last_bar_complete=series.last_bar_complete, volume_available=series.volume_available)
+    return CandleSeries(
+        symbol=series.symbol,
+        timeframe=series.timeframe,
+        provider=series.provider,
+        is_demo=series.is_demo,
+        df=series.df.iloc[-limit:],
+        fetched_at=series.fetched_at,
+        last_bar_complete=series.last_bar_complete,
+        volume_available=series.volume_available,
+    )

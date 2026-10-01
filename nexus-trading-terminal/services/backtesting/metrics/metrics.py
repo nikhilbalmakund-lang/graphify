@@ -121,9 +121,16 @@ def losing_periods(equity: pd.Series, min_depth: float = 0.02, limit: int = 10) 
                 j += 1
             depth = -float(dd[trough])
             if depth >= min_depth:
-                periods.append(LosingPeriod(start=str(idx[start]), trough=str(idx[trough]),
-                                            end=str(idx[j]) if j < n else None, depth_pct=round(depth * 100, 2),
-                                            duration_bars=j - start, recovered=j < n))
+                periods.append(
+                    LosingPeriod(
+                        start=str(idx[start]),
+                        trough=str(idx[trough]),
+                        end=str(idx[j]) if j < n else None,
+                        depth_pct=round(depth * 100, 2),
+                        duration_bars=j - start,
+                        recovered=j < n,
+                    )
+                )
             i = j
         else:
             i += 1
@@ -131,7 +138,9 @@ def losing_periods(equity: pd.Series, min_depth: float = 0.02, limit: int = 10) 
     return periods[:limit]
 
 
-def compute_metrics(trades: Sequence[TradeLike], equity: pd.Series, in_market: Sequence[bool] | None = None) -> MetricsBundle:
+def compute_metrics(
+    trades: Sequence[TradeLike], equity: pd.Series, in_market: Sequence[bool] | None = None
+) -> MetricsBundle:
     m = Metrics()
     if len(equity):
         m.start_equity = float(equity.iloc[0])
@@ -195,17 +204,40 @@ def compute_metrics(trades: Sequence[TradeLike], equity: pd.Series, in_market: S
         sp = [t.pnl for t in sub]
         gl = -sum(p for p in sp if p < 0)
         rr = [t.pnl_r for t in sub if t.pnl_r is not None]
-        by_regime.append(RegimeStats(
-            regime=rg, trades=len(sub), win_rate=round(sum(1 for p in sp if p > 0) / len(sp), 4),
-            average_r=round(float(np.mean(rr)), 3) if rr else None,
-            profit_factor=round(sum(p for p in sp if p > 0) / gl, 3) if gl > 0 else None, net_profit=round(sum(sp), 2)))
+        by_regime.append(
+            RegimeStats(
+                regime=rg,
+                trades=len(sub),
+                win_rate=round(sum(1 for p in sp if p > 0) / len(sp), 4),
+                average_r=round(float(np.mean(rr)), 3) if rr else None,
+                profit_factor=round(sum(p for p in sp if p > 0) / gl, 3) if gl > 0 else None,
+                net_profit=round(sum(sp), 2),
+            )
+        )
 
     dist: dict[str, int] = {}
     edges = [-np.inf, -2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2, 3, np.inf]
-    labels = ["<-2R", "-2..-1.5R", "-1.5..-1R", "-1..-0.5R", "-0.5..0R", "0..0.5R", "0.5..1R", "1..1.5R", "1.5..2R", "2..3R", ">3R"]
+    labels = [
+        "<-2R",
+        "-2..-1.5R",
+        "-1.5..-1R",
+        "-1..-0.5R",
+        "-0.5..0R",
+        "0..0.5R",
+        "0.5..1R",
+        "1..1.5R",
+        "1.5..2R",
+        "2..3R",
+        ">3R",
+    ]
     rs_all = [t.pnl_r for t in trades if t.pnl_r is not None]
     if rs_all:
         counts, _ = np.histogram(rs_all, bins=edges)
         dist = {lbl: int(c) for lbl, c in zip(labels, counts, strict=True)}
-    return MetricsBundle(metrics=m, monthly_returns=monthly, losing_periods=losing_periods(equity), by_regime=by_regime,
-                         r_distribution=dist)
+    return MetricsBundle(
+        metrics=m,
+        monthly_returns=monthly,
+        losing_periods=losing_periods(equity),
+        by_regime=by_regime,
+        r_distribution=dist,
+    )
