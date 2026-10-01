@@ -23,6 +23,9 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Project guidance for coding agents lives in the repository root CLAUDE.md.
   agentRules: false,
+  // `next dev` only serves its dev assets to the announced host (localhost) by default;
+  // also allow 127.0.0.1 so both loopback URLs work in development.
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   // Self-contained server bundle for the Docker image; plain `next start` locally.
   output: process.env.NEXT_STANDALONE === "1" ? "standalone" : undefined,
   transpilePackages: ["@nexus/shared-types"],
