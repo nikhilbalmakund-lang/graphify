@@ -8,12 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 from market_data.models import AssetSpec, Timeframe
 from market_data.normalization.validation import DataQualityReport
 from quant.features.feature_set import FeatureSnapshot, compute_indicator_frame, snapshot_at
-from quant.mtf.alignment import MTFAnalysis, TimeframeView, build_view, closed_htf_bars, combine
+from quant.mtf.alignment import MTFAnalysis, TimeframeView, build_view, closed_htf_bars, combine, resample_ohlcv
 from quant.regime.detector import RegimeResult, classify_frame, detect_regime
 from quant.signals.models import EventRisk, MacroContext, SentimentContext, SignalContext
 from quant.structure.engine import StructureSnapshot, StructureStates, analyze_structure, compute_structure_states
@@ -96,6 +97,40 @@ def build_context(*, symbol: str, spec: AssetSpec, bundle: AnalysisBundle, t: in
         data_quality=data_quality, macro=macro or MacroContext(), sentiment=sentiment or SentimentContext(),
         events=events or EventRisk(), ensemble=ensemble, price_precision=spec.price_precision,
     )
+
+
+class PrecomputedMTF:
+    """Higher-timeframe views for any base bar t using only HTF bars closed by then.
+
+    HTF indicator frames and structure states are computed once (they are
+    causal), so historical contexts are cheap to build.
+    """
+
+    def __init__(self, df: pd.DataFrame, base: Timeframe, higher: list[Timeframe], volume_available: bool = True):
+        self.base = base
+        self.items: list[tuple[Timeframe, pd.DataFrame | None, StructureStates | None, np.ndarray | None]] = []
+        bar_close = (df.index + pd.Timedelta(seconds=base.seconds)).asi8
+        for tf in higher:
+            htf = resample_ohlcv(df, tf)
+            if len(htf) < 60:
+                self.items.append((tf, None, None, None))
+                continue
+            frame = compute_indicator_frame(htf, tf, volume_available)
+            states = compute_structure_states(htf)
+            span = pd.Timedelta(days=7) if tf == Timeframe.W1 else pd.Timedelta(seconds=tf.seconds)
+            j = np.searchsorted((htf.index + span).asi8, bar_close, side="right") - 1
+            self.items.append((tf, frame, states, j))
+
+    def at(self, t: int) -> MTFAnalysis:
+        views: list[TimeframeView] = []
+        for tf, frame, states, jarr in self.items:
+            j = int(jarr[t]) if jarr is not None else -1
+            if frame is None or states is None or j < 59:
+                views.append(TimeframeView(timeframe=tf.value, available=False, note="Insufficient closed higher-timeframe bars"))
+                continue
+            trend_code = {1: "BULLISH", -1: "BEARISH"}.get(int(states.trend[j]), "NEUTRAL")
+            views.append(build_view(tf, frame.iloc[j: j + 1], structure_trend=trend_code))
+        return combine(views)
 
 
 HIGHER_TIMEFRAMES: dict[Timeframe, list[Timeframe]] = {

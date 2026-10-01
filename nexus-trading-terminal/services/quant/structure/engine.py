@@ -53,6 +53,7 @@ class Swing:
     price: float
     kind: str  # HIGH | LOW
     label: str = ""  # HH | LH | HL | LL | "" (first of its kind)
+    removed_at: int | None = None  # bar at which a more extreme same-type swing superseded it
 
 
 @dataclass
@@ -66,6 +67,11 @@ class StructureStates:
     sweep: np.ndarray  # 1 bullish sweep (of lows), -1 bearish sweep (of highs), 0 none
     sweep_level: np.ndarray
     swings: list[Swing] = field(default_factory=list)  # alternating swing list known at the last bar
+    history: list[Swing] = field(default_factory=list)  # every swing ever accepted, with removed_at
+
+    def swings_at(self, t: int) -> list[Swing]:
+        """The alternating swing list exactly as it was known at bar t."""
+        return [s for s in self.history if s.confirmed_at <= t and (s.removed_at is None or s.removed_at > t)]
 
 
 def find_pivots(high: np.ndarray, low: np.ndarray, left: int = 3, right: int = 3) -> list[Swing]:
@@ -90,14 +96,14 @@ def find_pivots(high: np.ndarray, low: np.ndarray, left: int = 3, right: int = 3
     return out
 
 
-def _add_swing(alt: list[Swing], s: Swing) -> bool:
+def _add_swing(alt: list[Swing], s: Swing, t: int | None = None) -> bool:
     """Append to the alternating list (merge same-type runs). Returns True if list changed."""
     if alt and alt[-1].kind == s.kind:
         last = alt[-1]
         more_extreme = s.price > last.price if s.kind == "HIGH" else s.price < last.price
         if not more_extreme:
             return False
-        alt.pop()
+        alt.pop().removed_at = t
     prev_same = next((x for x in reversed(alt) if x.kind == s.kind), None)
     if prev_same is None:
         s.label = ""
@@ -123,6 +129,7 @@ def compute_structure_states(df: pd.DataFrame, left: int = 3, right: int = 3) ->
     sweep_level = np.full(n, np.nan)
 
     alt: list[Swing] = []
+    history: list[Swing] = []
     p = 0
     state = 0
     ref_high = np.nan
@@ -133,8 +140,9 @@ def compute_structure_states(df: pd.DataFrame, left: int = 3, right: int = 3) ->
         changed = False
         while p < len(pivots) and pivots[p].confirmed_at <= t:
             s = Swing(**pivots[p].__dict__)
-            if _add_swing(alt, s):
+            if _add_swing(alt, s, t):
                 changed = True
+                history.append(s)
             p += 1
         if changed:
             last_h = next((x for x in reversed(alt) if x.kind == "HIGH"), None)
@@ -170,7 +178,7 @@ def compute_structure_states(df: pd.DataFrame, left: int = 3, right: int = 3) ->
         last_high[t] = ref_high
         last_low[t] = ref_low
     return StructureStates(trend=trend, last_high=last_high, last_low=last_low, event=event, sweep=sweep,
-                           sweep_level=sweep_level, swings=alt)
+                           sweep_level=sweep_level, swings=alt, history=history)
 
 
 # --------------------------------------------------------------------- snapshot
@@ -312,13 +320,12 @@ def analyze_structure(df: pd.DataFrame, features: pd.DataFrame, intraday: bool =
     """Structure snapshot at bar t (default: last bar) using only data <= t."""
     n = len(df)
     t = n - 1 if t is None else t
-    if states is None or t != n - 1:
-        sub = df.iloc[: t + 1]
-        states = compute_structure_states(sub, left, right)
+    if states is None:
+        states = compute_structure_states(df.iloc[: t + 1], left, right)
     index = df.index
     price = float(df["close"].iloc[t])
     atr = float(features["atr14"].iloc[t]) if not np.isnan(features["atr14"].iloc[t]) else float("nan")
-    swings = [s for s in states.swings if s.confirmed_at <= t]
+    swings = states.swings_at(t)
     last_h = next((s for s in reversed(swings) if s.kind == "HIGH"), None)
     last_l = next((s for s in reversed(swings) if s.kind == "LOW"), None)
 

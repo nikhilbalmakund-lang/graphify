@@ -110,3 +110,18 @@ def test_closed_htf_bars_have_no_lookahead():
     assert (htf.index + pd.Timedelta(hours=4) <= close_time).all()
     full = resample_ohlcv(df, Timeframe.H4)
     assert len(full) > len(htf)
+
+
+def test_swings_at_reproduces_history_exactly():
+    rng = np.random.default_rng(11)
+    df = frame_from_path(100 + np.cumsum(rng.standard_normal(400)))
+    full = compute_structure_states(df)
+    for t in (80, 150, 233, 399):
+        part = compute_structure_states(df.iloc[: t + 1])
+        got = [(s.index, s.kind, s.price, s.label) for s in full.swings_at(t)]
+        want = [(s.index, s.kind, s.price, s.label) for s in part.swings]
+        assert got == want
+        f = compute_indicator_frame(df, Timeframe.H1)
+        a = analyze_structure(df, f, states=full, t=t)
+        b = analyze_structure(df.iloc[: t + 1], f.iloc[: t + 1])
+        assert a.model_dump() == b.model_dump()

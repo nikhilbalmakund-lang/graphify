@@ -149,8 +149,11 @@ def combine(views: list[TimeframeView]) -> MTFAnalysis:
 
 def resample_ohlcv(df: pd.DataFrame, timeframe: Timeframe) -> pd.DataFrame:
     """Aggregate a finer OHLCV frame to a coarser timeframe (bar open-time labels)."""
+    rule_kwargs: dict[str, object]
     if timeframe == Timeframe.W1:
-        rule_kwargs = {"rule": "7D", "origin": pd.Timestamp("2022-01-03", tz="UTC")}
+        rule_kwargs = {"rule": "7D", "origin": pd.Timestamp("2022-01-03", tz="UTC")}  # Monday-anchored weeks
+    elif timeframe == Timeframe.D1:
+        rule_kwargs = {"rule": "1D"}  # UTC calendar days
     else:
         rule_kwargs = {"rule": timeframe.pandas_rule, "origin": "epoch"}
     out = df.resample(label="left", closed="left", **rule_kwargs).agg(
