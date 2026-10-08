@@ -78,7 +78,7 @@ const BRAND_SVG = `<svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="
 const STORE_KEY = "matric-hq-v1";
 const LOCAL_KEY = "matric-hq-local-v1";
 const DEFAULT_EXAM = "2026-10-24";
-const PLAN_LEN = 25;
+const PLAN_LEN = PLAN.length;
 
 function freshState() {
   return {
@@ -94,6 +94,8 @@ function freshState() {
     attempts: [],
     cards: {},
     minutes: {},
+    plan: PLAN_VERSION,
+    archive: null,
     updatedAt: 0,
   };
 }
@@ -104,6 +106,17 @@ function normalize(x) {
   if (!isYmd(s.examDate)) s.examDate = DEFAULT_EXAM;
   for (const k of ["tasks", "topics", "practice", "videos", "cards", "minutes"]) if (!s[k] || typeof s[k] !== "object") s[k] = {};
   if (!Array.isArray(s.attempts)) s.attempts = [];
+  // A new plan version starts the checklist and charts fresh. Earlier ticks
+  // and scores move to s.archive (kept, not shown). updatedAt is left alone
+  // so every device migrates the same way and sync still picks the newest.
+  const savedPlan = Number(x.plan) || 1;
+  if (savedPlan < PLAN_VERSION) {
+    const keep = s.attempts.filter((a) => a && a.date >= FRESH_START);
+    s.archive = { plan: savedPlan, tasks: s.tasks, attempts: s.attempts.filter((a) => !keep.includes(a)) };
+    s.tasks = {};
+    s.attempts = keep;
+    s.plan = PLAN_VERSION;
+  }
   return s;
 }
 function readJSON(k) {
@@ -248,6 +261,16 @@ function allTaskStats() {
   return { done, total };
 }
 const phaseOf = (n) => PHASES.find((p) => n >= p.days[0] && n <= p.days[1]);
+function learntTopics() {
+  const set = new Set(BANKED);
+  TOPICS.forEach((t) => {
+    if (S.topics[t.id] === "learning" || S.topics[t.id] === "confident") set.add(t.id);
+  });
+  PLAN.forEach((d) => d.tasks.forEach((t, i) => {
+    if (t.learn && t.topic && S.tasks[taskId(d.n, i)]) set.add(t.topic);
+  }));
+  return set;
+}
 
 /* ───────────────────────── papers ───────────────────────── */
 const SESS = Object.fromEntries(PAPERS.map((s) => [s.key, s]));
@@ -277,7 +300,7 @@ function paperButtons(sess, subj, p, small = true) {
 /* ───────────────────────── rendering core ───────────────────────── */
 const NAV = [
   ["today", "Today", "today"],
-  ["plan", "25-day plan", "plan"],
+  ["plan", "Study plan", "plan"],
   ["learn", "Learn", "learn"],
   ["papers", "Past papers", "papers"],
   ["cards", "Drill", "cards"],
@@ -394,7 +417,7 @@ function toast(msg, ms = 4200) {
 /* ───────────────────────── Today ───────────────────────── */
 function branchSvg() {
   const W = 720,
-    H = 150;
+    H = 156;
   const P = (t) => {
     // gentle rising curve: cubic Bézier from bottom-left to top-right
     const p0 = [18, 118],
@@ -415,14 +438,14 @@ function branchSvg() {
     const [x, y] = P(t);
     const side = n % 2 ? -1 : 1;
     const bx = x + side * 4;
-    const by = y + side * 24;
+    const by = y + side * 25;
     twigs += `<path class="twig" d="M${x.toFixed(1)} ${y.toFixed(1)} Q ${(x + side * 6).toFixed(1)} ${(y + side * 10).toFixed(1)} ${bx.toFixed(1)} ${by.toFixed(1)}"/>`;
     const pr = dayProgress(n);
     const st = pr.done === pr.total ? "done" : pr.done ? "part" : "none";
     const lab = `Day ${n}, ${fmtDate(dayDate(n))}: ${pr.done} of ${pr.total} tasks done${n === today ? " (today)" : ""}`;
-    blooms += `<g class="bl ${st}${n === today ? " today" : ""}" role="link" tabindex="0" aria-label="${esc(lab)}" data-act="open-day" data-day="${n}"><title>${esc(lab)}</title><circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="18" fill="transparent"/>${n === today ? `<circle class="ring" cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="17"/>` : ""}${blossom(+bx.toFixed(1), +by.toFixed(1), 11, "")}</g>`;
+    blooms += `<g class="bl ${st}${n === today ? " today" : ""}" role="link" tabindex="0" aria-label="${esc(lab)}" data-act="open-day" data-day="${n}"><title>${esc(lab)}</title><circle cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="20" fill="transparent"/>${n === today ? `<circle class="ring" cx="${bx.toFixed(1)}" cy="${by.toFixed(1)}" r="19"/>` : ""}${blossom(+bx.toFixed(1), +by.toFixed(1), 13, "")}</g>`;
   }
-  return `<svg class="branch" viewBox="0 0 ${W} ${H + 10}" role="group" aria-label="Your 25 days as jacaranda blossoms">
+  return `<svg class="branch" viewBox="0 0 ${W} ${H + 10}" role="group" aria-label="Your ${PLAN_LEN} days as jacaranda blossoms">
     <path class="stem" d="M18 118 C 220 150, 470 20, 704 44"/>${twigs}${blooms}</svg>`;
 }
 
@@ -493,7 +516,7 @@ function scoreMini(subj, p) {
   });
   const last = data[data.length - 1];
   const lastPct = pct(last.score, last.total || 150);
-  const status = lastPct >= 40 ? '<span class="chip good">Above your 40% target</span>' : lastPct >= 30 ? '<span class="chip warn">Passing, aim for 40%</span>' : '<span class="chip bad">Below 30%, keep going</span>';
+  const status = lastPct >= 40 ? '<span class="chip good">Above your 40% target</span>' : lastPct >= 30 ? '<span class="chip good">Pass mark reached</span>' : '<span class="chip plain">Next stop: 30%</span>';
   return `<div class="mini"><h4>${name}</h4><div class="row between"><div class="big">${lastPct}%</div>${status}</div>
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(name)} scores: ${data.map((a) => pct(a.score, a.total || 150) + "%").join(", ")}">
       ${grid}<line class="pass-l" x1="${x0}" x2="${x1}" y1="${yOf(30)}" y2="${yOf(30)}"/><text class="ax" x="${x1}" y="${yOf(30) - 4}" text-anchor="end">30% pass</text>${cols}
@@ -549,7 +572,7 @@ VIEWS.today = () => {
   else if (n > PLAN_LEN)
     top = `<div class="eyebrow">${greet} · ${fmtDate(todayYmd(), { weekday: "long", day: "numeric", month: "long" })}</div>
       <div class="day-of">Exam time</div>
-      <p class="lead">${toExam === 0 ? "Your first exam is today. Breathe, start with the question you know best, and write something for every question." : "The 25-day plan is finished. Keep sharp with one past paper a day until your last Maths or Physical Sciences paper."}</p>`;
+      <p class="lead">${toExam === 0 ? "Your first exam is today. Breathe, start with the question you know best, and write something for every question." : "The plan is complete. Keep sharp with one past paper a day until your last Maths or Physical Sciences paper."}</p>`;
   else
     top = `<div class="eyebrow">${greet} · ${fmtDate(todayYmd(), { weekday: "long", day: "numeric", month: "long" })} · ${plural(toExam, "day", "days")} to your first exam</div>
       <div class="day-of">Day ${n}<small>of ${PLAN_LEN}</small></div>
@@ -558,7 +581,7 @@ VIEWS.today = () => {
 
   const confirm = !S.examConfirmed
     ? `<div class="callout"><b>Is your first exam on ${fmtDate(S.examDate, { weekday: "long", day: "numeric", month: "long" })}?</b>
-        <p class="small">The plan counts 25 days back from your first exam. Set the real date from your timetable or admission letter so every day lines up.</p>
+        <p class="small">The plan counts ${PLAN_LEN} days back from your first exam. Set the real date from your timetable or admission letter so every day lines up.</p>
         <form class="row" data-form="exam-date"><label class="sr" for="first-exam">First exam date</label><input class="input" type="date" id="first-exam" value="${S.examDate}" required>
         <button class="btn sm" type="submit">Save date</button><button class="btn ghost sm" type="button" data-act="exam-ok">Yes, that's right</button></form></div>`
     : "";
@@ -589,22 +612,9 @@ VIEWS.today = () => {
     </section>`;
   }
 
-  // Unfinished tasks from earlier days
-  let behind = [];
-  for (let k = 1; k < Math.min(n, PLAN_LEN + 1); k++) {
-    const p = dayProgress(k);
-    if (p.done < p.total) behind.push(k);
-  }
-  const catchUp = behind.length
-    ? `<section class="callout warn"><b>${plural(behind.length, "earlier day has", "earlier days have")} unfinished tasks</b>
-       <p class="small">Don't try to do everything twice. Do the <i>past paper</i> tasks first; they carry the most marks.</p>
-       <div class="row">${behind.slice(-6).map((k) => `<a class="btn ghost sm" href="#day.${k}">Day ${k}</a>`).join("")}</div></section>`
-    : "";
-
   const t = allTaskStats();
-  const conf = (subj) => TOPICS.filter((x) => x.subj === subj && S.topics[x.id] === "confident").length;
-  const nm = TOPICS.filter((x) => x.subj === "maths").length;
-  const np = TOPICS.filter((x) => x.subj === "phys").length;
+  const learnt = learntTopics();
+  const confident = TOPICS.filter((x) => S.topics[x.id] === "confident").length;
   const known = DECKS.reduce((m, dk) => m + dk.cards.filter((_, i) => (S.cards[dk.id] || {})[i] >= 2).length, 0);
   const cardsTotal = DECKS.reduce((m, dk) => m + dk.cards.length, 0);
   const mins = S.minutes[todayYmd()] || {};
@@ -612,23 +622,22 @@ VIEWS.today = () => {
   return `
   <header class="hero">${top}
     <div class="branch-wrap">${branchSvg()}</div>
-    <div class="legend-row" aria-hidden="true"><span><i class="done"></i>Day done</span><span><i class="part"></i>Started</span><span><i class="none"></i>Not started</span><span>Day 1 on the left, Day 25 on the right. Tap a blossom to open that day</span></div>
+    <div class="legend-row" aria-hidden="true"><span><i class="done"></i>Day done</span><span><i class="part"></i>Started</span><span><i class="none"></i>Not started</span><span>Day 1 on the left, Day ${PLAN_LEN} on the right. Tap a blossom to open that day</span></div>
     ${paperCountdown ? `<div class="row">${paperCountdown}</div>` : ""}
   </header>
   ${confirm}
   ${mission}
-  ${catchUp}
   <section class="grid-2">
     <div class="card stack-lg"><div class="sec-head"><h2>Where you stand</h2><span class="small muted" data-sync>${syncLabel()}</span></div>
       ${meter("Plan tasks done", t.done, t.total, "good")}
-      ${meter("Maths topics you feel confident in", conf("maths"), nm)}
-      ${meter("Physical Sciences topics you feel confident in", conf("phys"), np, "phys")}
+      ${meter("Topics learnt", learnt.size, TOPICS.length)}
+      ${meter("Topics you feel confident in", confident, TOPICS.length, "phys")}
       ${meter("Flashcards you know", known, cardsTotal, "good")}
       <p class="small muted">Studied today: ${hm(mins.maths || 0)} Maths, ${hm(mins.phys || 0)} Physical Sciences (from the focus timer).</p>
     </div>
     <div class="card stack"><div class="sec-head"><h2>Past paper scores</h2><a class="small" href="#papers">Log a score</a></div>
       <div class="minis">${scoreMini("maths", 1)}${scoreMini("maths", 2)}${scoreMini("phys", 1)}${scoreMini("phys", 2)}</div>
-      <p class="small muted">Red line = 30% pass mark. Your target is 40% per paper, so a bad question can't sink you.</p>
+      <p class="small muted">Red line = 30% pass mark. Your target is 40% per paper, which leaves room for one tough question.</p>
     </div>
   </section>
   <section class="quick" aria-label="Shortcuts">
@@ -648,17 +657,17 @@ VIEWS.plan = () => {
       const d = PLAN[n - 1];
       const p = dayProgress(n);
       const st = p.done === p.total ? "done" : n === today ? "today" : "";
-      const chip = p.done === p.total ? '<span class="chip good">Done</span>' : n === today ? '<span class="chip maths">Today</span>' : n < today && p.done < p.total ? '<span class="chip warn">Unfinished</span>' : `<span class="small muted num">${p.done}/${p.total}</span>`;
+      const chip = p.done === p.total ? '<span class="chip good">Done</span>' : n === today ? '<span class="chip maths">Today</span>' : `<span class="small muted num">${p.done}/${p.total}</span>`;
       tiles += `<a class="dtile ${st}" href="#day.${n}"><div class="d-top"><span class="d-n">${n}</span><span class="d-date">${fmtDate(dayDate(n))}</span></div><div class="d-title">${esc(d.title)}</div><div>${chip}</div></a>`;
     }
-    return `<section class="section"><div class="sec-head"><h2>Phase ${ph.n}: ${esc(ph.name)}</h2><span class="small muted">Days ${ph.days[0]}${ph.days[1] !== ph.days[0] ? "–" + ph.days[1] : ""}</span></div>
+    return `<section class="section"><div class="sec-head"><h2>Phase ${ph.n}: ${esc(ph.name)}</h2><span class="small muted">${ph.days[1] !== ph.days[0] ? `Days ${ph.days[0]}–${ph.days[1]}` : `Day ${ph.days[0]}`}</span></div>
       <p class="muted">${esc(ph.blurb)}</p><div class="day-tiles">${tiles}</div></section>`;
   }).join("");
   const t = allTaskStats();
-  return `<header class="stack"><h1>Your 25-day plan</h1>
-    <p class="lead">Every day mixes Maths and Physical Sciences, about 3½ to 5 hours of work. Topics that give the most marks for the least effort come first; full timed papers come last. Day 25 is ${fmtDate(dayDate(25), { weekday: "long", day: "numeric", month: "long" })}, the day before your first exam.</p>
+  return `<header class="stack"><h1>Your ${PLAN_LEN}-day plan</h1>
+    <p class="lead">Ten days of new topics (one Maths and one Physical Sciences topic a day), one revision day for everything already in your bank, four full timed papers, then a calm exam eve. About 3½ to 5 hours a day. Day ${PLAN_LEN} is ${fmtDate(dayDate(PLAN_LEN), { weekday: "long", day: "numeric", month: "long" })}, the day before your first exam.</p>
     ${meter("Tasks done", t.done, t.total, "good")}</header>${phases}
-    <section class="callout"><b>If your Maths or Physical Sciences papers are after Day 25</b><p class="small">Keep going with one full past paper per day. The Today page will suggest the next unseen paper and set it up with the timer.</p></section>`;
+    <section class="callout"><b>If your Maths or Physical Sciences papers are after Day ${PLAN_LEN}</b><p class="small">Keep going with one full past paper per day. The Today page will suggest the next unseen paper and set it up with the timer.</p></section>`;
 };
 
 VIEWS.day = (arg) => {
@@ -666,8 +675,8 @@ VIEWS.day = (arg) => {
   const d = PLAN[n - 1];
   const p = dayProgress(n);
   const ph = phaseOf(n);
-  return `<nav class="crumbs"><a href="#plan">25-day plan</a><span>›</span><span>Day ${n}</span></nav>
-    <header class="stack"><div class="eyebrow">Phase ${ph.n} · ${esc(ph.name)} · ${fmtDate(dayDate(n), { weekday: "long", day: "numeric", month: "long" })}</div>
+  return `<nav class="crumbs"><a href="#plan">Study plan</a><span>›</span><span>Day ${n}</span></nav>
+    <header class="stack"><div class="eyebrow">${esc(ph.name)} · ${fmtDate(dayDate(n), { weekday: "long", day: "numeric", month: "long" })}</div>
     <h1>Day ${n}: ${esc(d.title)}</h1>
     <p class="muted num">${p.done} of ${p.total} tasks done${p.left ? ` · about ${hm(p.left)} of work left` : ""}</p></header>
     <section class="card"><ul class="tasks">${d.tasks.map((t, i) => taskRow(n, i, t)).join("")}</ul></section>
@@ -676,16 +685,21 @@ VIEWS.day = (arg) => {
 
 /* ───────────────────────── Learn ───────────────────────── */
 const STATUS = { none: "Not started", learning: "Learning", confident: "Confident" };
+// Topics in the bank count as learnt until the learner marks them confident.
+const statusOf = (t) => {
+  const v = S.topics[t.id];
+  return BANKED.includes(t.id) && (!v || v === "none") ? "learning" : v || "none";
+};
 function practiceScore(t) {
   const marks = t.practice.map((_, i) => S.practice[`${t.id}.${i}`]);
   return { right: marks.filter((m) => m === "right").length, tried: marks.filter(Boolean).length, total: t.practice.length };
 }
 function topicCard(t) {
-  const st = S.topics[t.id] || "none";
+  const st = statusOf(t);
   const ps = practiceScore(t);
-  const stChip = st === "confident" ? '<span class="chip good">Confident</span>' : st === "learning" ? `<span class="chip ${t.subj}">Learning</span>` : '<span class="chip plain">Not started</span>';
+  const stChip = st === "confident" ? '<span class="chip good">Confident</span>' : BANKED.includes(t.id) ? "" : st === "learning" ? `<span class="chip ${t.subj}">Learning</span>` : '<span class="chip plain">Not started</span>';
   return `<a class="tcard ${t.subj}" href="#t.${t.id}">
-    <div class="row between"><span class="eyebrow">${t.subj === "maths" ? "Maths" : t.paper === 1 ? "Physics" : "Chemistry"} · P${t.paper}</span>${t.level === "gold" ? '<span class="chip gold">Start here</span>' : ""}</div>
+    <div class="row between"><span class="eyebrow">${t.subj === "maths" ? "Maths" : t.paper === 1 ? "Physics" : "Chemistry"} · P${t.paper}</span>${BANKED.includes(t.id) ? '<span class="chip good">In the bank</span>' : t.level === "gold" ? '<span class="chip gold">Start here</span>' : ""}</div>
     <h3>${esc(t.name)}</h3>
     <div class="tc-meta">${t.marks} marks · ${esc(t.where.replace(/^Paper \d · /, ""))}</div>
     <div class="tc-foot">${stChip}<span class="small muted">${plural(t.videos.length, "video", "videos")} · practice ${ps.right}/${ps.total}</span></div>
@@ -701,7 +715,7 @@ VIEWS.learn = () => {
     })
     .join("");
   return `<header class="stack"><h1>Learn</h1>
-    <p class="lead">Every exam topic in one place: 2–4 short videos that get to the point, the method in plain words, worked examples marked like a memo, and practice with answers. Topics marked <b>Start here</b> give the most marks for the least effort.</p>
+    <p class="lead">Every exam topic in one place: 2–4 short videos that get to the point, the method in plain words, worked examples marked like a memo, and practice with answers. Topics marked <b>In the bank</b> are ones you've already studied; they all come back on the revision day.</p>
     <div class="seg" role="group" aria-label="Subject"><button data-act="ltab" data-v="maths" aria-pressed="${tab === "maths"}">Mathematics</button><button data-act="ltab" data-v="phys" aria-pressed="${tab === "phys"}">Physical Sciences</button></div></header>${groups}`;
 };
 
@@ -731,7 +745,7 @@ function proofFig(kind) {
 VIEWS.t = (id) => {
   const t = TOPIC[id];
   if (!t) return VIEWS.learn();
-  const st = S.topics[t.id] || "none";
+  const st = statusOf(t);
   const subjName = t.subj === "maths" ? "Mathematics" : "Physical Sciences";
   const vids = t.videos
     .map(
@@ -774,7 +788,7 @@ VIEWS.t = (id) => {
       .join("")}</section>`;
   const drillSessions = ["2023-nov", "2022-nov", "2021-nov", "2024-jun", "2023-jun"];
   const pastPapers = `<section class="section"><h2>Find it in past papers</h2>
-    <p class="muted">${esc(t.where)}. Open a paper, find the ${esc(t.name.toLowerCase())} question, answer it, then mark it with the memo. (Save November 2025 and 2024 for your full practice papers on Days 18–24.)</p>
+    <p class="muted">${esc(t.where)}. Open a paper, find the ${esc(t.name.toLowerCase())} question, answer it, then mark it with the memo. (November 2025 is saved for your full practice papers on Days 12–15.)</p>
     <div class="stack">${drillSessions
       .map((k) => `<div class="prow ${t.subj}"><div class="p-name"><i></i>${paperName(t.subj, t.paper)}</div><div class="small muted">${esc(SESS[k].label)}</div><div class="p-actions">${paperButtons(k, t.subj, t.paper)}</div></div>`)
       .join("")}</div></section>`;
@@ -786,7 +800,7 @@ VIEWS.t = (id) => {
   return `<nav class="crumbs"><a href="#learn" data-act="ltab-go" data-v="${t.subj}">Learn</a><span>›</span><span>${subjName}</span><span>›</span><span>Paper ${t.paper}</span></nav>
   <header class="topic-head">
     <h1>${esc(t.name)}</h1>
-    <div class="meta"><span class="chip ${t.subj}">${t.marks} marks</span><span class="small muted">${esc(t.where)}</span>${t.level === "gold" ? '<span class="chip gold">Start here</span>' : ""}</div>
+    <div class="meta"><span class="chip ${t.subj}">${t.marks} marks</span><span class="small muted">${esc(t.where)}</span>${BANKED.includes(t.id) ? '<span class="chip good">In the bank</span>' : t.level === "gold" ? '<span class="chip gold">Start here</span>' : ""}</div>
     <p class="lead">${t.hook}</p>
     <div class="seg status" role="group" aria-label="How well do you know this topic?">${Object.entries(STATUS)
       .map(([k, v]) => `<button data-act="status" data-id="${t.id}" data-v="${k}" aria-pressed="${st === k}">${v}</button>`)
@@ -809,14 +823,17 @@ VIEWS.t = (id) => {
 function paperRow(s, subj, p) {
   const key = pKey(s.key, subj, p);
   const at = attemptsFor(key);
-  const best = at.length ? Math.max(...at.map((a) => a.score)) : null;
-  const status = best === null ? '<span class="small muted">Not written yet</span>' : `<span class="chip ${pct(best) >= 30 ? "good" : "bad"}">Best ${best}/150 · ${pct(best)}%</span>`;
+  const best = at.length ? at.reduce((m, a) => (pct(a.score, a.total || 150) > pct(m.score, m.total || 150) ? a : m)) : null;
+  const bestPct = best ? pct(best.score, best.total || 150) : 0;
+  const status = best === null ? '<span class="small muted">Not written yet</span>' : `<span class="chip ${bestPct >= 30 ? "good" : "plain"}">Best ${best.score}/${best.total || 150} · ${bestPct}%</span>`;
   const open = L.logOpen === key;
   const form = open
     ? `<form class="logform" data-form="log" data-key="${key}">
-      <label class="lbl">Your mark out of 150<input class="input n3" type="number" inputmode="numeric" min="0" max="150" step="1" id="score-${key.replace(/\./g, "-")}" required></label>
+      <label class="lbl">Your mark<input class="input n3" type="number" inputmode="numeric" min="0" max="150" step="1" id="score-${key.replace(/\./g, "-")}" required></label>
+      <label class="lbl">Out of<input class="input n3" type="number" inputmode="numeric" min="1" max="150" step="1" id="total-${key.replace(/\./g, "-")}" value="150" required></label>
       <label class="lbl">Date written<input class="input" type="date" id="date-${key.replace(/\./g, "-")}" value="${todayYmd()}" max="${todayYmd()}" required></label>
-      <div class="row" style="align-self:end"><button class="btn sm" type="submit">Save score</button><button class="btn ghost sm" type="button" data-act="log-close">Cancel</button></div></form>`
+      <div class="row" style="align-self:end"><button class="btn sm" type="submit">Save score</button><button class="btn ghost sm" type="button" data-act="log-close">Cancel</button></div>
+      <p class="small muted" style="flex-basis:100%">Did only some questions? Put the marks those questions were worth in “Out of”, so your percentage is fair.</p></form>`
     : "";
   return `<div class="prow ${subj}" id="row-${key.replace(/\./g, "-")}">
     <div class="p-name"><i></i>${paperName(subj, p)}</div>
@@ -855,7 +872,7 @@ VIEWS.papers = () => {
     : '<p class="muted">Nothing logged yet. After you mark a paper with its memo, press <b>Log score</b> on that paper.</p>';
   return `<header class="stack"><h1>Past papers</h1>
     <p class="lead">Every November paper from 2017 to 2025, plus the May/June rewrite papers, each with its memo. The links open the official PDFs from the Department of Basic Education. Question papers are in English; memos are bilingual (English and Afrikaans).</p></header>
-    <section class="callout"><b>How to mark yourself</b><p class="small">Mark strictly: give yourself a mark only where the memo shows a ✓. If an earlier answer was wrong but you used it correctly later, the memo usually still gives the later marks (CA, consistent accuracy). Write down every question where you lost marks and redo it two days later.</p></section>
+    <section class="callout"><b>How to mark yourself</b><p class="small">Mark strictly: give yourself a mark only where the memo shows a ✓. If an earlier answer was wrong but you used it correctly later, the memo usually still gives the later marks (CA, consistent accuracy). Write down every question to redo, and redo it two days later.</p></section>
     <div class="filters" role="group" aria-label="Filter papers">
       <div class="seg" role="group" aria-label="Subject">${f("pSubj", "all", "Both subjects")}${f("pSubj", "maths", "Maths")}${f("pSubj", "phys", "Physical Sciences")}</div>
       <div class="seg" role="group" aria-label="Session">${f("pSess", "all", "All sessions")}${f("pSess", "nov", "November")}${f("pSess", "jun", "May/June")}${f("pSess", "mar", "Feb/March")}</div>
@@ -959,7 +976,7 @@ VIEWS.strategy = () => {
   return `<header class="stack"><h1>Exam game plan</h1>
     <p class="lead">You don't need to know everything. You need to collect enough marks, on purpose. This page is how.</p></header>
     <section class="section"><h2>What passing takes</h2>
-      <p style="max-width:70ch">The pass mark is 30% for each subject. Both papers together are out of 300, so you need about <b>90 marks across both papers</b>. Aim for <b>60 out of 150 (40%) on each paper</b>; that gives you room for a bad question or a hard paper. Last time you had 15% in Maths and 26% in Physical Sciences. Physical Sciences needs about 20 more marks per paper. Maths needs about 40 more per paper, and the targets below show exactly where they come from.</p></section>
+      <p style="max-width:70ch">The pass mark is 30% for each subject. Both papers together are out of 300, so you need about <b>90 marks across both papers</b>. Aim for <b>60 out of 150 (40%) on each paper</b>; that leaves room for a tough question or a hard paper. The targets below show exactly where those 60 marks come from.</p></section>
     <section class="section"><h2>Where your marks will come from</h2>
       <p class="muted">These are targets, not the whole paper. Notice you're not trying to get full marks anywhere. You're taking the first, easier parts of every question.</p>
       <div class="grid-2">${tgt("maths-1", "Maths Paper 1")}${tgt("maths-2", "Maths Paper 2")}${tgt("phys-1", "Physics Paper 1")}${tgt("phys-2", "Chemistry Paper 2")}</div></section>
@@ -982,7 +999,7 @@ VIEWS.strategy = () => {
     <section class="section"><h2>The day before and the day of</h2><div class="grid-2">
       <div class="card stack"><h3>The night before</h3><ul class="small"><li>Light review only: flashcards and the formula sheet</li><li>Pack your bag (list on the right)</li><li>No new topics after supper</li><li>Sleep at least 8 hours. Tired brains lose marks on easy questions</li></ul></div>
       <div class="card stack"><h3>In your bag</h3><ul class="small"><li>ID document and exam admission letter</li><li>At least two black or blue pens, a pencil, an eraser, a ruler</li><li>Calculator (check the battery or solar panel)</li><li>Compass and protractor for Maths Paper 2</li><li>Water and a watch. Phones are not allowed in the exam room</li><li>Arrive at least 30 minutes early</li></ul></div></div>
-      <section class="callout"><b>If you panic in the exam</b><p class="small">Put your pen down. Breathe in for 4 seconds, hold for 4, breathe out for 4. Do it three times. Then find the easiest question you can see and write the first line. Marks come one line at a time.</p></section></section>
+      <section class="callout"><b>If you feel stressed in the exam</b><p class="small">Put your pen down. Breathe in for 4 seconds, hold for 4, breathe out for 4. Do it three times. Then find the easiest question you can see and write the first line. Marks come one line at a time.</p></section></section>
     <section class="section"><h2>Free official help</h2><div class="stack">${RESOURCES.map((r) => `<div><a class="ext" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.label)}</a><p class="small muted">${esc(r.note)}</p></div>`).join("")}</div></section>`;
 };
 
@@ -1099,7 +1116,7 @@ VIEWS.settings = () => {
   return `<header class="stack"><h1>Settings</h1><p class="lead">No account, no login. Everything is saved automatically.</p><p class="small muted" data-sync>${syncLabel()}</p></header>
   <form class="card stack-lg" data-form="settings">
     <label class="lbl">Your first name (optional, for the greeting)<input class="input" type="text" id="set-name" maxlength="40" value="${esc(S.name)}" autocomplete="given-name"></label>
-    <label class="lbl">Date of your FIRST exam (the plan's Day 25 is the day before)<input class="input" type="date" id="set-exam" value="${S.examDate}" required></label>
+    <label class="lbl">Date of your FIRST exam (the plan's Day ${PLAN_LEN} is the day before)<input class="input" type="date" id="set-exam" value="${S.examDate}" required></label>
     <div class="stack"><p class="small" style="font-weight:600">Your Maths and Physical Sciences paper dates (optional, from your timetable)</p>
       <div class="grid-2">${pd("maths.1")}${pd("maths.2")}${pd("phys.1")}${pd("phys.2")}</div></div>
     <div><button class="btn" type="submit">Save settings</button></div>
@@ -1467,20 +1484,22 @@ document.addEventListener("submit", (e) => {
     S.examDate = v;
     S.examConfirmed = true;
     commit();
-    toast(`Saved. Day 25 is now ${fmtDate(addDays(v, -1), { weekday: "long", day: "numeric", month: "long" })}.`);
+    toast(`Saved. Day ${PLAN_LEN} is now ${fmtDate(addDays(v, -1), { weekday: "long", day: "numeric", month: "long" })}.`);
     rerender();
   } else if (kind === "log") {
     const key = form.dataset.key;
     const id = key.replace(/\./g, "-");
     const score = Number($("#score-" + id).value);
+    const total = Number($("#total-" + id).value);
     const date = $("#date-" + id).value;
-    if (!Number.isInteger(score) || score < 0 || score > 150) return toast("Enter a whole-number mark between 0 and 150.");
-    S.attempts.push({ id: Date.now(), key, score, total: 150, date: isYmd(date) ? date : todayYmd() });
+    if (!Number.isInteger(total) || total < 1 || total > 150) return toast("“Out of” should be a whole number from 1 to 150.");
+    if (!Number.isInteger(score) || score < 0 || score > total) return toast(`Enter a whole-number mark between 0 and ${total}.`);
+    S.attempts.push({ id: Date.now(), key, score, total, date: isYmd(date) ? date : todayYmd() });
     L.logOpen = null;
     saveLocal();
     commit();
-    const p = pct(score);
-    toast(p >= 40 ? `${p}%. That's above your 40% target. Keep this up.` : p >= 30 ? `${p}%. That's a pass. Now push for 40%: redo the questions you lost marks on.` : `${p}%. Every paper you mark shows you exactly which marks to go after next. Redo the questions you lost marks on in two days.`, 7000);
+    const p = pct(score, total);
+    toast(p >= 40 ? `${p}%. That's above your 40% target. Keep this up.` : p >= 30 ? `${p}%. That's a pass. Next stop 40%: redo the questions on your list.` : `${p}% saved. Every paper you mark shows you exactly which marks to go after next. Redo those questions in two days.`, 7000);
     rerender();
   } else if (kind === "settings") {
     const exam = $("#set-exam").value;

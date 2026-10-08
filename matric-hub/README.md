@@ -1,6 +1,6 @@
 # Matric Rewrite HQ
 
-A 25-day study system for the NSC **Mathematics** and **Physical Sciences** rewrite.
+A 16-day study system for the NSC **Mathematics** and **Physical Sciences** rewrite.
 Everything is in one page: no account, no login.
 
 ## Open it
@@ -17,8 +17,8 @@ You need internet for the YouTube videos and the past-paper PDFs; everything els
 
 | Screen | What it does |
 |---|---|
-| Today | Day *n* of 25, today's tasks with ticks, catch-up list, progress meters, score charts |
-| 25-day plan | Four phases: easy marks first, then core topics, then one full timed paper a day |
+| Today | Day *n* of 16, today's tasks with ticks, progress meters, score charts |
+| Study plan | Days 1–10 new topics (one Maths + one Physical Sciences a day), Day 11 a revision day for the topics already studied, Days 12–15 one full timed paper a day, Day 16 exam eve |
 | Learn | 26 topics (10 Maths, 9 Physics, 7 Chemistry): 2–5 short videos each, plain-language ideas, definitions, formulas marked *on the sheet* / *memorise*, step-by-step method, memo-style worked examples, common mistakes, practice with answers, and where the topic sits in past papers |
 | Past papers | Every November paper 2017–2025 plus the May/June and Feb/March sessions, question paper + memo (+ Maths P2 answer book), a 3-hour exam timer and a score log |
 | Drill | Flashcards: Physics and Chemistry definitions, organic families & reactions, chemistry rules, Maths must-knows, geometry reasons |
@@ -42,7 +42,7 @@ The page is built from `src/`:
 ```
 src/topics_maths.js    Maths topics (content + video ids)
 src/topics_physics.js  Physics and Chemistry topics
-src/plan.js            the 25-day plan
+src/plan.js            the 16-day plan (bump PLAN_VERSION to start a new plan fresh)
 src/cards.js           flashcard decks
 src/sheets.js          formula sheets, mark targets, resources
 src/papers.js          generated paper links (tools/make_papers.py)
